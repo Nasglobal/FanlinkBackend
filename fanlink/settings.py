@@ -39,7 +39,11 @@ DEBUG = env.bool('DEBUG', default=False)
 
 
 DATABASES = {
-    'default': dj_database_url.config(default='postgresql://fanlink_database_user:3CD28fz1meQDvb9qdzc5GnVJpZanxe6H@dpg-cteasu3tq21c73bhir4g-a.oregon-postgres.render.com/fanlink_database')
+    'default': dj_database_url.parse(
+        os.getenv('DATABASE_URL'),
+        conn_max_age=600,
+        ssl_require=True,
+    )
 }
 
 SPOTIFY_CLIENT_ID = env('SPOTIFY_CLIENT_ID')
