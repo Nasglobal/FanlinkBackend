@@ -12,16 +12,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import dj_database_url
-import environ
 import os
-from django.core.wsgi import get_wsgi_application
-
-# Initialize environment variables
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'fanlink.settings')
-env = environ.Env()
-environ.Env.read_env()
-
-application = get_wsgi_application()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -31,26 +22,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
+#SECRET_KEY = 'django-insecure-=b#f#l0$6b-5@%!q@37z04l0v9gk&91%&529s!e5+9=z8e=dd^'
 
-# Update sensitive settings
-SECRET_KEY = env('SECRET_KEY')
-DEBUG = env.bool('DEBUG', default=False)
+SECRET_KEY = os.environ.get('SECRET_KEY')
+SPOTIFY_CLIENT_ID = os.environ.get('SPOTIFY_CLIENT_ID')
+SPOTIFY_CLIENT_SECRET = os.environ.get('SPOTIFY_CLIENT_SECRET')
+GOOGLE_CSE_ID = os.environ.get('GOOGLE_CSE_ID')
+GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
+YOUTUBE_API_KEY = os.environ.get('YOUTUBE_API_KEY')
+
+DEBUG = os.environ.get("DEBUG","False").lower() == "true"
 
 
-
-DATABASES = {
-    'default': dj_database_url.parse(
-        os.getenv('DATABASE_URL'),
-        conn_max_age=600,
-        ssl_require=True,
-    )
-}
-
-SPOTIFY_CLIENT_ID = env('SPOTIFY_CLIENT_ID')
-SPOTIFY_CLIENT_SECRET = env('SPOTIFY_CLIENT_SECRET')
-GOOGLE_CSE_ID = env('GOOGLE_CSE_ID')
-GOOGLE_API_KEY = env('GOOGLE_API_KEY')
-
+# SPOTIFY_CLIENT_ID = 'b337eeee3b9643afab1851ac84ebb01d'
 
 # SPOTIFY_CLIENT_SECRET = '5dfa2a317fcb4a3e926058e18cda5aba'
 
@@ -58,9 +42,8 @@ GOOGLE_API_KEY = env('GOOGLE_API_KEY')
 # GOOGLE_API_KEY = 'AIzaSyDPLOagFdn4-VHToWM9cd3rbyacDgEj2Pk'
 
 # YOUTUBE_API_KEY = 'AIzaSyDPLOagFdn4-VHToWM9cd3rbyacDgEj2Pk'
-
 # SECURITY WARNING: don't run with debug turned on in production!
-
+# DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
 
@@ -146,22 +129,26 @@ WSGI_APPLICATION = 'fanlink.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.mysql',
-#         'NAME': 'fanlink',
-#         #'HOST': '172.17.0.1',
-#         'HOST': '127.0.0.1',
-#         'PORT': '3306',
-#         #'USER': 'username',
-#         'USER': 'root',
-#         #'PASSWORD': 'password'
-#         'PASSWORD': 'Chime@1989',
-#         #'PASSWORD': 'Sq!p@per13',
-#         #'HOST': 'localhost',
-#         #'USER': 'root',
-#     }
-# }
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'fanlink',
+        #'HOST': '172.17.0.1',
+        'HOST': '127.0.0.1',
+        'PORT': '3306',
+        #'USER': 'username',
+        'USER': 'root',
+        #'PASSWORD': 'password'
+        'PASSWORD': 'Chime@1989',
+        #'PASSWORD': 'Sq!p@per13',
+        #'HOST': 'localhost',
+        #'USER': 'root',
+    }
+}
+
+database_url = os.environ.get("DATABASE_URL")
+
+DATABASES["default"] = dj_database_url.parse(database_url)
 
 
 # Password validation
@@ -188,7 +175,6 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:3001',
     'http://stemgen.michost.top',
     'https://stemgen.michost.top',
-    'https://fanlink-frontend.onrender.com',
     
 ]
 
@@ -212,13 +198,9 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-#STATIC_URL = 'static/'
+STATIC_URL = 'static/'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-STATIC_URL = '/static/'
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-
