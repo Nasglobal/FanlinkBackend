@@ -173,9 +173,7 @@ AUTH_PASSWORD_VALIDATORS = [
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'http://localhost:3001',
-    'http://stemgen.michost.top',
-    'https://stemgen.michost.top',
-    
+    'https://fanlink-frontend.onrender.com',   
 ]
 
 
