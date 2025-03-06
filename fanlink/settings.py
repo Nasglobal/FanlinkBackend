@@ -9,7 +9,7 @@ https://docs.djangoproject.com/en/5.1/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.1/ref/settings/
 """
-
+from datetime import timedelta
 from pathlib import Path
 import dj_database_url
 import os
@@ -24,14 +24,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 #SECRET_KEY = 'django-insecure-=b#f#l0$6b-5@%!q@37z04l0v9gk&91%&529s!e5+9=z8e=dd^'
 
-SECRET_KEY = os.environ.get('SECRET_KEY')
-SPOTIFY_CLIENT_ID = os.environ.get('SPOTIFY_CLIENT_ID')
-SPOTIFY_CLIENT_SECRET = os.environ.get('SPOTIFY_CLIENT_SECRET')
-GOOGLE_CSE_ID = os.environ.get('GOOGLE_CSE_ID')
-GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY')
-YOUTUBE_API_KEY = os.environ.get('YOUTUBE_API_KEY')
+SECRET_KEY = os.getenv('SECRET_KEY')
+SPOTIFY_CLIENT_ID = os.getenv('SPOTIFY_CLIENT_ID')
+SPOTIFY_CLIENT_SECRET = os.getenv('SPOTIFY_CLIENT_SECRET')
+GOOGLE_CSE_ID = os.getenv('GOOGLE_CSE_ID')
+GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 
-DEBUG = os.environ.get("DEBUG","False").lower() == "true"
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 
 # SPOTIFY_CLIENT_ID = 'b337eeee3b9643afab1851ac84ebb01d'
@@ -42,10 +42,18 @@ DEBUG = os.environ.get("DEBUG","False").lower() == "true"
 # GOOGLE_API_KEY = 'AIzaSyDPLOagFdn4-VHToWM9cd3rbyacDgEj2Pk'
 
 # YOUTUBE_API_KEY = 'AIzaSyDPLOagFdn4-VHToWM9cd3rbyacDgEj2Pk'
-# SECURITY WARNING: don't run with debug turned on in production!
-# DEBUG = True
+
+#DEBUG = True
+
 
 ALLOWED_HOSTS = ["*"]
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),  # Short lifetime for access tokens
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),     # Longer lifetime for refresh tokens
+    'ROTATE_REFRESH_TOKENS': True,                  # Optional: Rotate refresh tokens on refresh
+    'BLACKLIST_AFTER_ROTATION': True,               # Optional: Blacklist old refresh tokens
+}
 
 
 # Application definition
@@ -132,23 +140,37 @@ WSGI_APPLICATION = 'fanlink.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'fanlink',
-        #'HOST': '172.17.0.1',
-        'HOST': '127.0.0.1',
-        'PORT': '3306',
-        #'USER': 'username',
-        'USER': 'root',
-        #'PASSWORD': 'password'
-        'PASSWORD': 'Chime@1989',
-        #'PASSWORD': 'Sq!p@per13',
-        #'HOST': 'localhost',
-        #'USER': 'root',
+        'NAME': os.getenv('DATABASE_NAME', 'fanlink'),
+        'USER': os.getenv('DATABASE_USER', 'fanlink_user'),
+        'PASSWORD': os.getenv('DATABASE_PASSWORD', ''),
+        'HOST': os.getenv('DATABASE_HOST', 'localhost'),
+        'PORT': os.getenv('DATABASE_PORT', '3306'),
+        'OPTIONS': {
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+        },
     }
 }
 
-database_url = os.environ.get("DATABASE_URL")
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.mysql',
+#         'NAME': 'fanlink',
+#         #'HOST': '172.17.0.1',
+#         'HOST': 'mysql',
+#         'PORT': '3306',
+#         #'USER': 'username',
+#         'USER': 'fanlink_user',
+#         #'PASSWORD': 'password'
+#         'PASSWORD': 'Chime@1989',
+#         #'PASSWORD': 'Sq!p@per13',
+#         #'HOST': 'localhost',
+#         #'USER': 'root',
+#     }
+# }
 
-DATABASES["default"] = dj_database_url.parse(database_url)
+#database_url = os.environ.get("DATABASE_URL")
+
+#DATABASES["default"] = dj_database_url.parse(database_url)
 
 
 # Password validation
@@ -174,7 +196,7 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'http://localhost:3001',
     'https://fanlink-frontend.onrender.com',  
-    'https://fanlink-frontend.vercel.app',
+    'https://fanlink.51lexapps.com',
 ]
 
 
@@ -197,7 +219,11 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = 'static/'
+#STATIC_URL = 'static/'
+
+# Static files for Nginx
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / "static"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field

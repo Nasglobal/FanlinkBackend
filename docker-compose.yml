@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:latest
+    container_name: mysql_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ChimeRoot@9999
+      MYSQL_DATABASE: fanlink
+      MYSQL_USER: fanlink_user
+      MYSQL_PASSWORD: Chime@1989
+    ports:
+      - "3307:3306"
+    networks:
+      - mynetwork
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pChimeRoot@9999"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  django:
+    build: .
+    container_name: django_app
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy  # Now MySQL must be healthy before Django starts
+    environment:
+      - DATABASE_HOST=mysql
+      - DATABASE_PORT=3306
+      - DATABASE_NAME=fanlink
+      - DATABASE_USER=fanlink_user
+      - DATABASE_PASSWORD=Chime@1989
+    ports:
+      - "8000:8000"
+    command: ["sh", "-c", "sleep 10 && python manage.py migrate && python manage.py runserver 0.0.0.0:8000"]
+    networks:
+      - mynetwork
+
+networks:
+  mynetwork:
+    driver: bridge

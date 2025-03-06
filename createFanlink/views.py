@@ -86,7 +86,7 @@ class FanLinksViewSet(viewsets.ModelViewSet):
         track_name = request.data.get("track")
         description = request.data.get("description")
         release_date = request.data.get("releaseDate")
-        upc = request.data.get("upc")
+        isrc = request.data.get("isrc")
         source = request.data.get("source")
         label_name = request.data.get("label")
 
@@ -96,17 +96,17 @@ class FanLinksViewSet(viewsets.ModelViewSet):
         if not artist_name or not track_name:
             return JsonResponse({"error": "Artist name and track name are required."}, status=400)
         
-        track_link = get_spotify_track_link(artist_name, track_name)
-        video_link = get_youtube_video_link(artist_name, track_name)
-        boomplay_link = search_boomplay_with_google(artist_name, track_name)
-        audiomack_link = search_audiomack_with_google(artist_name, track_name)
-        itunes_link = get_itunes_track_link(artist_name, track_name)
-        deezer_link = get_deezer_track_link(artist_name, track_name)
-        apple_music_link = get_apple_music_link(artist_name, track_name)
-        amazon_music_link = search_amazon_music_with_google(artist_name, track_name)
-        tidal_link = search_tidal_with_google(artist_name, track_name)
+        track_link = get_spotify_track_link(artist_name, track_name, release_date,isrc)
+        video_link = get_youtube_video_link(artist_name, track_name, release_date,isrc)
+        boomplay_link = search_boomplay_with_google(artist_name, track_name, release_date,isrc)
+        audiomack_link = search_audiomack_with_google(artist_name, track_name, release_date,isrc)
+        itunes_link = get_itunes_track_link(artist_name, track_name, release_date,isrc)
+        deezer_link = get_deezer_track_link(artist_name, track_name, release_date,isrc)
+        apple_music_link = get_apple_music_link(artist_name, track_name, release_date,isrc)
+        amazon_music_link = search_amazon_music_with_google(artist_name, track_name, release_date,isrc)
+        tidal_link = search_tidal_with_google(artist_name, track_name, release_date,isrc)
 
-        
+
         if track_link or video_link or boomplay_link or audiomack_link or itunes_link or deezer_link or apple_music_link or amazon_music_link or tidal_link:
             fanlink = f"/{artist}-{track}"
             try:
@@ -124,16 +124,17 @@ class FanLinksViewSet(viewsets.ModelViewSet):
                check_fan_links.save()
                
             except FanLinks.DoesNotExist:
-                FanLinks(ArtistName=artist,TrackName=track,SpotifyLink=track_link,AppleLink=apple_music_link,AmazonLink=amazon_music_link,YoutubeLink=video_link,ItunesLink=itunes_link,AudiomackLink=audiomack_link,DeezerLink=deezer_link,TidalLink=tidal_link,Boomplay=boomplay_link,Description=description,UPC=upc,ReleaseDate=release_date,Source=source).save()
+                
+                FanLinks(ArtistName=artist,TrackName=track,SpotifyLink=track_link,AppleLink=apple_music_link,AmazonLink=amazon_music_link,YoutubeLink=video_link,ItunesLink=itunes_link,AudiomackLink=audiomack_link,DeezerLink=deezer_link,TidalLink=tidal_link,Boomplay=boomplay_link,Description=description,UPC=isrc,ReleaseDate=release_date,Source=source).save()
             try:
                 releasesList = Releases.objects.filter(Artists=artist_name,Title=track_name).first()
                 if releasesList is not None:
                     releasesList.FanlinkSent = fanlink
                     releasesList.save()
                 else:
-                   Releases(Label=label_name,Artists=artist_name,Title=track_name,UPC=upc,ReleaseDate="TBC",FanlinkSent=fanlink,Status="",Y="",MissingLinks="").save() 
+                   Releases(Label=label_name,Artists=artist_name,Title=track_name,UPC=isrc,ReleaseDate="TBC",FanlinkSent=fanlink,Status="",Y="",MissingLinks="").save() 
             except Releases.DoesNotExist:
-                Releases(Label=label_name,Artists=artist_name,Title=track_name,UPC=upc,ReleaseDate="TBC",FanlinkSent=fanlink,Status="",Y="",MissingLinks="").save()
+                Releases(Label=label_name,Artists=artist_name,Title=track_name,UPC=isrc,ReleaseDate="TBC",FanlinkSent=fanlink,Status="",Y="",MissingLinks="").save()
             
             return JsonResponse({"link": fanlink})
         else:
@@ -253,7 +254,7 @@ def get_fanlink(request,track,artist):
          }
         return JsonResponse({'data': res })
       except FanLinks.DoesNotExist:
-        return JsonResponse({"error": "Artist name and track name are required."}, status=400)
+        return JsonResponse({"error": "Artist name or track name does not exist."}, status=400)
 
 
 @csrf_exempt
@@ -281,7 +282,7 @@ def drive_webhook(request):
                         print("Newly added rows:")
                         for row in new_rows:
                             print(row)
-                            auto_generate_fanlink(row[1],row[2],row[0],row[3],row[4])
+                            auto_generate_fanlink(row[1],row[2],row[0],row[6 ],row[4])
                     previous_rows = current_rows
                 return JsonResponse({"message": "Notification received successfully."}, status=200)
             except json.JSONDecodeError:
@@ -297,7 +298,7 @@ def drive_webhook(request):
                     if new_rows:
                         for row in new_rows:
                             print(row)
-                            auto_generate_fanlink(row[1],row[2],row[0],row[3],row[4])
+                            auto_generate_fanlink(row[1],row[2],row[0],row[6],row[4])
 
                     # Update the stored rows
                     previous_rows = current_rows
@@ -314,21 +315,21 @@ def drive_webhook(request):
 
     return HttpResponse("Invalid request", status=400)
 
-def auto_generate_fanlink(artist_name,track_name,label_name,upc,release_date): 
+def auto_generate_fanlink(artist_name,track_name,label_name,isrc,release_date): 
     artist = replace_spaces_with_underscore(artist_name)
     track = replace_spaces_with_underscore(track_name)
     if not artist_name or not track_name:
         print("Artist name and track name are required.")
     else:   
-        track_link = get_spotify_track_link(artist_name, track_name)
-        video_link = get_youtube_video_link(artist_name, track_name)
-        boomplay_link = search_boomplay_with_google(artist_name, track_name)
-        audiomack_link = search_audiomack_with_google(artist_name, track_name)
-        itunes_link = get_itunes_track_link(artist_name, track_name)
-        deezer_link = get_deezer_track_link(artist_name, track_name)
-        apple_music_link = get_apple_music_link(artist_name, track_name)
-        amazon_music_link = search_amazon_music_with_google(artist_name, track_name)
-        tidal_link = search_tidal_with_google(artist_name, track_name)
+        track_link = get_spotify_track_link(artist_name, track_name, release_date,isrc)
+        video_link = get_youtube_video_link(artist_name, track_name, release_date,isrc)
+        boomplay_link = search_boomplay_with_google(artist_name, track_name, release_date,isrc)
+        audiomack_link = search_audiomack_with_google(artist_name, track_name, release_date,isrc)
+        itunes_link = get_itunes_track_link(artist_name, track_name, release_date,isrc)
+        deezer_link = get_deezer_track_link(artist_name, track_name, release_date,isrc)
+        apple_music_link = get_apple_music_link(artist_name, track_name, release_date,isrc)
+        amazon_music_link = search_amazon_music_with_google(artist_name, track_name, release_date,isrc)
+        tidal_link = search_tidal_with_google(artist_name, track_name, release_date,isrc)
 
         if track_link or video_link or boomplay_link or audiomack_link or itunes_link or deezer_link or apple_music_link or amazon_music_link or tidal_link:
             try:
@@ -344,9 +345,9 @@ def auto_generate_fanlink(artist_name,track_name,label_name,upc,release_date):
                check_fan_links.TidalLink = tidal_link
                check_fan_links.save()
             except FanLinks.DoesNotExist:
-                FanLinks(ArtistName=artist,TrackName=track,SpotifyLink=track_link,AppleLink=apple_music_link,AmazonLink=amazon_music_link,YoutubeLink=video_link,ItunesLink=itunes_link,AudiomackLink=audiomack_link,DeezerLink=deezer_link,TidalLink=tidal_link,Boomplay=boomplay_link,Description="auto generated",UPC=upc,ReleaseDate=release_date,Source="youtube").save()
+                FanLinks(ArtistName=artist,TrackName=track,SpotifyLink=track_link,AppleLink=apple_music_link,AmazonLink=amazon_music_link,YoutubeLink=video_link,ItunesLink=itunes_link,AudiomackLink=audiomack_link,DeezerLink=deezer_link,TidalLink=tidal_link,Boomplay=boomplay_link,Description="auto generated",UPC=isrc,ReleaseDate=release_date,Source="youtube").save()
             fanlink = f"/{artist}-{track}"
-            Releases(Label=label_name,Artists=artist_name,Title=track_name,UPC=upc,ReleaseDate="TBC",FanlinkSent=fanlink,Status="",Y="",MissingLinks="").save()
+            Releases(Label=label_name,Artists=artist_name,Title=track_name,UPC=isrc,ReleaseDate="TBC",FanlinkSent=fanlink,Status="",Y="",MissingLinks="").save()
 
 
 
@@ -381,42 +382,3 @@ def search_tracks(request):
     except requests.exceptions.RequestException as e:
         return JsonResponse({"error": str(e)}, status=500)
 
-# @csrf_exempt
-# def search_tracks(request):
-#     query = request.GET.get("query", "")
-#     if not query:
-#         return JsonResponse({"error": "Query parameter is required"}, status=400)
-
-#     refined_query = f"{query} artist music"
-#     url = "https://www.googleapis.com/customsearch/v1"
-#     params = {
-#         "q": refined_query,
-#         "key": settings.GOOGLE_API_KEY,  # Your Google API key
-#         "cx": settings.GOOGLE_CSE_ID,  # Your Custom Search Engine ID
-#     }
-
-#     try:
-#         response = requests.get(url, params=params)
-#         response.raise_for_status()
-#         data = response.json()
-
-#         # Extract artist names from search results
-#         artist_names = []
-#         if "items" in data:
-#             for item in data["items"]:
-#                 title = item.get("title", "")
-
-#                 # Extract potential artist name using regex or keywords
-#                 match = re.search(r"(?P<artist>.+?) - (?:Music|Song|Track|Artist|Album)", title, re.IGNORECASE)
-#                 if match:
-#                     artist_names.append(match.group("artist"))
-#                 else:
-#                     # Fallback: Take the full title if no pattern matches
-#                     artist_names.append(title)
-
-#         # Remove duplicates and return as a JSON response
-#         artist_names = list(set(artist_names))  # Avoid duplicates
-#         return JsonResponse({"artists": artist_names}, safe=False)
-
-#     except requests.exceptions.RequestException as e:
-#         return JsonResponse({"error": str(e)}, status=500)

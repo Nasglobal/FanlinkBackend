@@ -22,28 +22,57 @@ def get_spotify_access_token():
     return response_data.get("access_token")
 
 
-def get_spotify_track_link(artist_name, track_name):
+
+def get_spotify_track_link(artist_name, track_name, release_date, isrc=None):
     access_token = get_spotify_access_token()
     search_url = "https://api.spotify.com/v1/search"
     
     headers = {
         "Authorization": f"Bearer {access_token}"
     }
+    
+    
+    # Convert input release_date from DD/MM/YYYY to YYYY-MM-DD
+    try:
+        day, month, year = release_date.split("/")
+        release_date_formatted = f"{year}-{month}-{day}"  # Convert to YYYY-MM-DD
+    except ValueError:
+        print("Invalid release date format. Please use DD/MM/YYYY.")
+        release_date_formatted = ""
+    
+    query = f"artist:{artist_name} track:{track_name}"
     params = {
-        "q": f"artist:{artist_name} track:{track_name}",
+        "q": query,
         "type": "track",
-        "limit": 1
+        "limit": 10  # Retrieve multiple results for filtering
     }
     
     response = requests.get(search_url, headers=headers, params=params)
     response_data = response.json()
-    
-    # Extract the first track's Spotify link
+    print("spotify response",response_data)
     try:
-        track_link = response_data['tracks']['items'][0]['external_urls']['spotify']
-        return track_link
-    except (IndexError, KeyError):
+        for track in response_data['tracks']['items']:
+            track_release_date = track['album']['release_date']
+            track_isrc = track.get('external_ids', {}).get('isrc').lower()
+            
+            # Compare release dates and ISRC if provided
+            if track_release_date == release_date_formatted and (not isrc or track_isrc == isrc.lower()):
+                print("Exact match found based on release date and ISRC spotify")
+                return track['external_urls']['spotify']
+        
+        # No exact match, return the first result as fallback
+        if response_data['tracks']['items']:
+            print("No Exact match found based on release date and ISRC spotify")
+            first_track = response_data['tracks']['items'][0]
+            return first_track['external_urls']['spotify']
+        
+        print("No tracks found")
         return None
+    
+    except (KeyError, IndexError) as e:
+        print(f"Error while processing the response: {e}")
+        return None
+
 
 
 def replace_spaces_with_underscore(text):
@@ -51,7 +80,7 @@ def replace_spaces_with_underscore(text):
 
 
 
-def search_boomplay_with_google(artist_name, track_name):
+def search_boomplay_with_google(artist_name, track_name, release_date=None, isrc=None):
     api_key = settings.GOOGLE_API_KEY
     cse_id = settings.GOOGLE_CSE_ID
     search_url = "https://www.googleapis.com/customsearch/v1"
@@ -66,14 +95,34 @@ def search_boomplay_with_google(artist_name, track_name):
     response_data = response.json()
     
     try:
-        # Get the first result link if available
-        boomplay_link = response_data['items'][0]['link']
-        return boomplay_link
-    except (IndexError, KeyError):
+        for item in response_data.get('items', []):
+            link = item['link']
+            
+            # Check for release_date and isrc in the snippet or title
+            snippet = item.get('snippet', '').lower()
+            title = item.get('title', '').lower()
+            
+            date_match = release_date is None or release_date in snippet or release_date in title
+            isrc_match = isrc is None or isrc.lower() in snippet or isrc.lower() in title
+            
+            if date_match and isrc_match:
+                print("Exact match found based on release date and ISRC boomplay")
+                return link
+        
+        # No exact match, return the first result as fallback
+        if response_data.get('items'):
+            print("No exact match found, returning first result boomplay")
+            return response_data['items'][0]['link']
+        
+        print("No links found")
+        return None
+    
+    except (IndexError, KeyError) as e:
+        print(f"Error while processing the response: {e}")
         return None
 
 
-def search_audiomack_with_google(artist_name, track_name):
+def search_audiomack_with_google(artist_name, track_name, release_date=None, isrc=None):
     api_key = settings.GOOGLE_API_KEY
     cse_id = settings.GOOGLE_CSE_ID
     search_url = "https://www.googleapis.com/customsearch/v1"
@@ -87,27 +136,65 @@ def search_audiomack_with_google(artist_name, track_name):
     response = requests.get(search_url, params=params)
     response_data = response.json()
     
-    # Extract the first result link if available
     try:
-        audiomack_link = response_data['items'][0]['link']
-        return audiomack_link
-    except (IndexError, KeyError):
+        for item in response_data.get('items', []):
+            link = item['link']
+            
+            # Attempt to validate release_date and ISRC in the description or snippet
+            snippet = item.get('snippet', '').lower()
+            
+            date_match = release_date is None or release_date in snippet
+            isrc_match = isrc is None or isrc.lower() in snippet
+            
+            if date_match or isrc_match:
+                print("Exact match found based on release date and ISRC audiomack")
+                return link
+        
+        # No exact match, return the first result as fallback
+        if response_data.get('items'):
+            print("No exact match found, returning first result audiomack")
+            return response_data['items'][0]['link']
+        
+        print("No links found")
+        return None
+    
+    except (IndexError, KeyError) as e:
+        print(f"Error while processing the response: {e}")
         return None
 
-def get_itunes_track_link(artist_name, track_name):
+
+def get_itunes_track_link(artist_name, track_name, release_date=None, isrc=None):
     search_url = "https://itunes.apple.com/search"
     params = {
         "term": f"{artist_name} {track_name}",
         "media": "music",
-        "limit": 1,
+        "limit": 10,  # Fetch multiple results for filtering
     }
     
     response = requests.get(search_url, params=params)
     response_data = response.json()
     
     try:
-        # Get the URL for the track if found
-        track_link = response_data['results'][0]['trackViewUrl']
-        return track_link
-    except (IndexError, KeyError):
+        for track in response_data.get('results', []):
+            track_release_date = track.get('releaseDate', '')[:10]  # Extract only the date part (YYYY-MM-DD)
+            track_isrc = track.get('isrc', '')  # iTunes includes ISRC if available
+            
+            # Check for release_date and isrc match
+            date_match = release_date is None or release_date == track_release_date
+            isrc_match = isrc is None or isrc == track_isrc
+            
+            if date_match or isrc_match:
+                print("Exact match found based on release date and ISRC itunes")
+                return track['trackViewUrl']
+        
+        # No exact match, return the first result as fallback
+        if response_data.get('results'):
+            print("No exact match found, returning first result itunes")
+            return response_data['results'][0]['trackViewUrl']
+        
+        print("No tracks found")
+        return None
+    
+    except (IndexError, KeyError) as e:
+        print(f"Error while processing the response: {e}")
         return None
