@@ -3,10 +3,14 @@ from django.forms.models import model_to_dict
 from django.db.models import Q,Sum
 from django.utils import timezone
 from django.conf import settings
+from rest_framework.parsers import MultiPartParser, FormParser
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
+import subprocess
 from django.db.models.functions import Trim
 from django.core.files.storage import default_storage
-from django.http import JsonResponse,StreamingHttpResponse,HttpResponse
-from .models import MediaFiles,FanLinks,Releases
+from django.http import JsonResponse,StreamingHttpResponse,HttpResponse,FileResponse
+from .models import MediaFiles,FanLinks,Releases,Video
 from rest_framework import viewsets, mixins, status,pagination
 from rest_framework.decorators import action,api_view
 from .serializers import MediaFilesSerializers,FanlinksSerializers,ReleasesSerializers
@@ -22,11 +26,16 @@ from googleapiclient.discovery import build
 from google.oauth2 import service_account
 import json
 from .utils import fetch_sheet_data,get_last_updated_row,get_google_credentials
+from sendfile import sendfile
+from django.urls import reverse
 import os
 import sys
 import shutil
+import ffmpeg
 import pandas as pd
 import io
+import random
+import string
 import requests
 from datetime import datetime
 from .spotifyFunctions import get_spotify_track_link,replace_spaces_with_underscore,search_boomplay_with_google,search_audiomack_with_google,get_itunes_track_link
@@ -382,3 +391,269 @@ def search_tracks(request):
     except requests.exceptions.RequestException as e:
         return JsonResponse({"error": str(e)}, status=500)
 
+
+
+class UploadVideoView(APIView):
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request, *args, **kwargs):
+        file_obj = request.FILES['file']
+        video = Video.objects.create(file=file_obj)
+
+        # Extract just the filename (without "videos/")
+        filename = os.path.basename(video.file.name)
+        #folder_name = os.path.splitext(filename)[0]
+
+        # Generate the correct streaming URL
+        video_url = request.build_absolute_uri(
+            reverse("stream_video", kwargs={"filename": filename})
+        )
+
+        return Response({
+            "message": "Upload successful",
+            "video_id": video.id,  # Include video_id in the response
+            "video_url": video_url
+        })
+
+
+
+def serve_video(request, filename):
+    """Serve video with proper headers for seeking support."""
+    file_path = os.path.join(settings.MEDIA_ROOT, "videos", filename)  # Adjusted path
+
+    if not os.path.exists(file_path):
+        return HttpResponse(status=404)
+
+    # Serve the file with support for byte-range requests
+    response = FileResponse(open(file_path, "rb"), content_type="video/mp4")
+    response["Accept-Ranges"] = "bytes"
+    
+    return response
+
+# def serve_video(request, filename):
+#     file_path = os.path.join(settings.MEDIA_ROOT, filename)
+#     return sendfile(request, file_path, attachment=False)
+
+
+@csrf_exempt
+def trim_video(request):
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            video_id = data.get("video_id")  # Video ID from frontend
+            start_time = float(data.get("start_time", 0))
+            end_time = float(data.get("end_time", 0))
+
+            # Validate inputs
+            if not video_id or start_time < 0 or end_time <= start_time:
+                return JsonResponse({"error": "Invalid input data"}, status=400)
+
+            # Fetch video from the database
+            try:
+                video = Video.objects.get(id=video_id)
+            except Video.DoesNotExist:
+                return JsonResponse({"error": "Video not found"}, status=404)
+
+            input_video = os.path.join(settings.MEDIA_ROOT, str(video.file))
+            trimmed_filename = f"{video_id}_trimmed.mp4"
+            output_video = os.path.join(settings.MEDIA_ROOT, "trimmed", trimmed_filename)
+
+            if os.path.exists(output_video):
+                random_chars = ''.join(random.choices(string.ascii_letters + string.digits, k=3))
+                trimmed_filename = f"{video_id}{random_chars}_trimmed.mp4"
+                output_video = os.path.join(settings.MEDIA_ROOT, "trimmed", trimmed_filename)
+
+            # Ensure output directory exists
+            os.makedirs(os.path.dirname(output_video), exist_ok=True)
+
+            # Trim video
+            trim_command = [
+                "ffmpeg",
+                "-i", input_video,
+                "-ss", str(start_time),
+                "-to", str(end_time),
+                "-c", "copy",
+                output_video
+            ]
+            subprocess.run(trim_command, check=True)
+
+            # Apply watermark
+            watermark_image = os.path.join(settings.MEDIA_ROOT, "Africha_Entertainment.jpg")
+            if not os.path.exists(watermark_image):
+                return JsonResponse({"error": "Watermark image not found"}, status=500)
+
+            watermarked_video = os.path.join(settings.MEDIA_ROOT, "trimmed", f"watermarked_{trimmed_filename}")
+            watermarked_video = add_watermark_to_video(output_video, watermarked_video, watermark_image)
+
+            if watermarked_video:
+                os.remove(output_video)  # Remove original trimmed video
+
+            # Construct absolute URL
+            trimmed_video_url = request.build_absolute_uri(settings.MEDIA_URL + "trimmed/" + f"watermarked_{trimmed_filename}")
+
+            return JsonResponse({
+                "message": "Video trimmed successfully with watermark",
+                "trimmed_video_url": trimmed_video_url
+            })
+
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+    return JsonResponse({"error": "Invalid request method"}, status=405)
+
+
+
+
+def add_watermark_to_video(input_video, output_video, watermark_image):
+    """
+    Adds a watermark to the given video using FFmpeg.
+    """
+    try:
+        command = [
+            "ffmpeg",
+            "-i", input_video,  # Input video
+            "-i", watermark_image,  # Watermark image
+            "-filter_complex", "overlay=W-w-10:H-h-10",  # Position watermark at bottom-right
+            "-codec:a", "copy",  # Keep original audio
+            output_video
+        ]
+        subprocess.run(command, check=True)  # Run FFmpeg command
+        return output_video  # Return watermarked video path
+    except subprocess.CalledProcessError as e:
+        print(f"Error adding watermark: {e}")
+        return None  # Return None if an error occurs
+
+
+@csrf_exempt
+@api_view(["POST"])
+def split_video(request):
+    video_id = request.data.get("video_id")
+    duration = int(request.data.get("duration", 15))  # Default to 15 seconds
+    
+    try:
+        video = Video.objects.get(id=video_id)
+        video_path = os.path.join(settings.MEDIA_ROOT, str(video.file))
+        
+        # Create a folder for split videos
+        folder_name = os.path.splitext(os.path.basename(video_path))[0]
+        output_folder = os.path.join(settings.MEDIA_ROOT, "splitted_videos", folder_name)
+        
+        if os.path.exists(output_folder):
+            random_chars = ''.join(random.choices(string.ascii_letters + string.digits, k=3))
+            folder_name = folder_name + random_chars
+            output_folder = os.path.join(settings.MEDIA_ROOT, "splitted_videos", folder_name)
+
+        os.makedirs(output_folder, exist_ok=True)
+
+        # Define watermark image path (Make sure this file exists)
+        watermark_image = os.path.join(settings.MEDIA_ROOT, "Africha_Entertainment.jpg")
+        if not os.path.exists(watermark_image):
+            return JsonResponse({"error": "Watermark image not found"}, status=500)
+        
+        # Get video duration using ffprobe
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", video_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        total_duration = float(result.stdout.strip())
+
+        # Split video into parts
+        part = 1
+        start_time = 0
+        while start_time < total_duration:
+            output_file = os.path.join(output_folder, f"{folder_name}{part}.mp4")
+            temp_file = os.path.join(output_folder, f"temp_part{part}.mp4")  # Temporary file before watermarking
+            
+            # Split command (extracts a portion of the video)
+            split_cmd = [
+                "ffmpeg", "-i", video_path, "-ss", str(start_time), "-t", str(duration),
+                "-c", "copy", temp_file  # Save temp file before watermark
+            ]
+            subprocess.run(split_cmd, check=True)
+
+            # Apply watermark
+            watermarked_video = add_watermark_to_video(temp_file, output_file, watermark_image)
+
+            if watermarked_video:
+                os.remove(temp_file)  # Delete temp file after watermarking
+
+            start_time += duration
+            part += 1
+
+        # Mark video as split
+        video.splitted = "Yes"
+        video.save()
+
+        return JsonResponse({
+            "message": "Video split successfully with watermark",
+            "download_url": f"{folder_name}"
+        })
+    except Video.DoesNotExist:
+        return JsonResponse({"error": f"Video not found: id = {video_id}"}, status=404)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+
+@csrf_exempt
+def download_split_folder(request, folder_name):
+    folder_path = os.path.join(settings.MEDIA_ROOT, "splitted_videos", folder_name)
+    zip_path = f"{folder_path}.zip"
+    
+    if not os.path.exists(folder_path):
+        return JsonResponse({"error": "Folder not found"}, status=404)
+    
+    # Zip the folder
+    shutil.make_archive(folder_path, 'zip', folder_path)
+    return FileResponse(open(zip_path, "rb"), as_attachment=True, filename=f"{folder_name}.zip")
+
+
+@csrf_exempt
+def get_uploaded_videos(request):
+    videos = Video.objects.all()
+    video_list = [
+        {
+            "id": video.id,
+            "name": os.path.basename(video.file.name),  # Extracts video file name
+            "file_url": request.build_absolute_uri(settings.MEDIA_URL + str(video.file)),
+            "uploaded_at": video.uploaded_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "splitted": video.splitted
+        }
+        for video in videos
+    ]
+    return JsonResponse({"videos": video_list}, safe=False)
+
+
+
+@csrf_exempt
+def delete_video(request, video_id):
+    if request.method == "DELETE":
+        video = get_object_or_404(Video, id=video_id)
+
+        # Delete the video file from storage
+        if video.file:
+            trimmed_filename = f"{video_id}_trimmed.mp4"
+            splitted_folder = os.path.splitext(os.path.basename(video.file.name))[0]
+            zipfile = f"{splitted_folder}.zip"
+            split_folder_path = os.path.join(settings.MEDIA_ROOT, "splitted_videos", splitted_folder)
+            zipfile_path = os.path.join(settings.MEDIA_ROOT, "splitted_videos", zipfile)
+            trim_video_path = os.path.join(settings.MEDIA_ROOT, "trimmed", trimmed_filename)
+            video_path = video.file.path  # Absolute path of the video file
+            if os.path.exists(video_path):
+                os.remove(video_path)  
+            if os.path.exists(zipfile_path):
+                os.remove(zipfile_path)
+            if os.path.exists(trim_video_path):
+                os.remove(trim_video_path)  
+            if os.path.exists(split_folder_path):
+                shutil.rmtree(split_folder_path)
+                 
+
+        # Delete from database
+        video.delete()
+        
+        return JsonResponse({"message": "Video deleted successfully"}, status=200)
+
+    return JsonResponse({"error": "Invalid request"}, status=400)

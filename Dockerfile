@@ -4,6 +4,9 @@ FROM python:3.11
 # Set the working directory
 WORKDIR /app
 
+# Install system dependencies
+RUN apt-get update && apt-get install -y ffmpeg && apt-get clean
+
 # Copy the project files to the container
 COPY . /app/
 

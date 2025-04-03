@@ -14,6 +14,8 @@ services:
       - "3307:3306"
     networks:
       - mynetwork
+    volumes:
+      - mysql_data:/var/lib/mysql  # Persist MySQL database data
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pChimeRoot@9999"]
       interval: 10s
@@ -27,19 +29,26 @@ services:
     restart: always
     depends_on:
       mysql:
-        condition: service_healthy  # Now MySQL must be healthy before Django starts
+        condition: service_healthy  # MySQL must be healthy before Django starts
     environment:
       - DATABASE_HOST=mysql
       - DATABASE_PORT=3306
       - DATABASE_NAME=fanlink
       - DATABASE_USER=fanlink_user
       - DATABASE_PASSWORD=Chime@1989
+      - SECRET_KEY='django-insecure-=b#f#l0$6b-5@%!q@37z04l0v9gk&91%&529s!e5+9=z8e=dd^'
     ports:
       - "8000:8000"
-    command: ["sh", "-c", "sleep 10 && python manage.py migrate && python manage.py runserver 0.0.0.0:8000"]
+    volumes:
+      - ./media:/app/media  # Persist uploaded media files
+    command: ["sh", "-c", "sleep 10 && python manage.py runserver 0.0.0.0:8000"]
     networks:
       - mynetwork
 
 networks:
   mynetwork:
     driver: bridge
+
+volumes:
+  mysql_data:  # Named volume for MySQL persistence
+  media:  # Persist media files (optional, but not necessary here since it's mapped to a local directory)

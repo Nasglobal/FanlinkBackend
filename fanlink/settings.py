@@ -43,7 +43,7 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 # YOUTUBE_API_KEY = 'AIzaSyDPLOagFdn4-VHToWM9cd3rbyacDgEj2Pk'
 
-#DEBUG = True
+# DEBUG = True
 
 
 ALLOWED_HOSTS = ["*"]
@@ -88,6 +88,14 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     
 ]
+
+MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
+
+# Serve media files using WhiteNoise
+WHITENOISE_ROOT = os.path.join(BASE_DIR, 'media')
+
+SENDFILE_BACKEND = 'django_sendfile.backends.simple'  # Use 'nginx' if using Nginx
+
 
 LOGGING = {
     'version': 1,
@@ -200,7 +208,9 @@ CORS_ALLOWED_ORIGINS = [
 ]
 
 
-
+# Increase upload size limit to 2GB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 2147483648  # 2GB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 2147483648  # 2GB
 
 
 
@@ -224,6 +234,15 @@ USE_TZ = True
 # Static files for Nginx
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / "static"
+
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+
+# if DEBUG:
+#     from django.conf.urls.static import static
+#     urlpatterns += static(MEDIA_URL, document_root=MEDIA_ROOT)
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field

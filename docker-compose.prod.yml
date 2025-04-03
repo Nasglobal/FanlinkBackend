@@ -34,6 +34,7 @@ services:
       - mynetwork
     volumes:
       - static_volume:/app/static  # Mount static files
+      - ./media:/app/media  # Persist uploaded media files
 
   nginx:
     image: nginx:latest

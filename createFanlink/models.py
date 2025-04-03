@@ -98,3 +98,12 @@ class Releases(models.Model):
 
   class Meta:
         ordering = ['id']
+
+class Video(models.Model):
+    file = models.FileField(upload_to="videos/")
+    #processed_file = models.FileField(upload_to="processed_videos/", null=True, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    splitted = models.CharField(max_length=255, blank=True,null=True,default="NO")
+
+    class Meta:
+        ordering = ['id']
