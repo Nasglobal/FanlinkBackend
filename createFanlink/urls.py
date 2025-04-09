@@ -29,7 +29,7 @@ urlpatterns = [
     path("download-split-folder/<str:folder_name>/", download_split_folder, name="download_split_folder"), 
     path("videos/", get_uploaded_videos, name="uploaded-videos"),
     path('delete-video/<int:video_id>/', delete_video, name='delete_video'),
-    path("media/trimmed-videos/<str:filename>/", download_trimmed_video, name="trimmed_video"),
+    path("trimmed-video/<str:filename>/", download_trimmed_video, name="trimmed_video"),
 ]
 
 

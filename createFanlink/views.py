@@ -531,6 +531,7 @@ def trim_video(request):
         return JsonResponse({"error": str(e)}, status=500)
 
 
+@csrf_exempt
 def download_trimmed_video(request, filename):
     file_path = os.path.join(settings.MEDIA_ROOT, "trimmed", filename)
     if os.path.exists(file_path):
