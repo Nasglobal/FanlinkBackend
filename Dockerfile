@@ -11,8 +11,9 @@ RUN apt-get update && apt-get install -y ffmpeg && apt-get clean
 COPY . /app/
 
 # Install dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install -r requirements.txt
+
 
 # Expose the port Django runs on
 EXPOSE 8000
