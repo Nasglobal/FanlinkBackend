@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path,include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
-from .views import MediaFileViewset,FanLinksViewSet,ReleasesViewSet,get_fanlink,RegisterView, LoginView,ProfileView,drive_webhook,search_tracks,UploadVideoView, trim_video, serve_video,download_split_folder,split_video,get_uploaded_videos,delete_video
+from .views import MediaFileViewset,FanLinksViewSet,ReleasesViewSet,get_fanlink,RegisterView, LoginView,ProfileView,drive_webhook,search_tracks,UploadVideoView, trim_video, serve_video,download_split_folder,split_video,get_uploaded_videos,delete_video,download_trimmed_video
 
 
 router = DefaultRouter()
@@ -29,6 +29,7 @@ urlpatterns = [
     path("download-split-folder/<str:folder_name>/", download_split_folder, name="download_split_folder"), 
     path("videos/", get_uploaded_videos, name="uploaded-videos"),
     path('delete-video/<int:video_id>/', delete_video, name='delete_video'),
+    path("media/trimmed-videos/<str:filename>/", download_trimmed_video, name="trimmed_video"),
 ]
 
 
