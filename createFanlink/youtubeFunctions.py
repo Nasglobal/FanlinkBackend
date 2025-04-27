@@ -1,20 +1,74 @@
 import requests
 from django.conf import settings
+import difflib
+from difflib import SequenceMatcher
 
 
-def get_youtube_video_link(artist_name, track_name, release_date, isrc=None):
+
+# def get_youtube_video_link(artist_name, track_name, release_date, isrc=None):
+#     api_key = settings.YOUTUBE_API_KEY
+#     search_url = "https://www.googleapis.com/youtube/v3/search"
+    
+#     # Convert input release_date from DD/MM/YYYY to YYYY-MM-DD
+#     try:
+#         day, month, year = release_date.split("/")
+#         release_date_formatted = f"{year}-{month}-{day}"  # Convert to YYYY-MM-DD
+#     except ValueError:
+#         print("Invalid release date format. Please use DD/MM/YYYY.")
+#         release_date_formatted = ""
+    
+#     # Build search query
+#     query = f"{artist_name} {track_name}"
+    
+#     params = {
+#         "part": "snippet",
+#         "q": query,
+#         "type": "video",
+#         "maxResults": 10,
+#         "key": api_key,
+#     }
+    
+#     response = requests.get(search_url, params=params)
+#     response_data = response.json()
+    
+#     try:
+#         for item in response_data['items']:
+#             video_id = item['id']['videoId']
+#             video_title = item['snippet']['title']
+#             published_at = item['snippet']['publishedAt'][:10]  # Extract YYYY-MM-DD from publishedAt
+            
+#             # Assume the ISRC is included in the title or description (requires proper matching logic)
+#             video_description = item['snippet'].get('description', "")
+#             isrc_match = isrc in video_title or isrc in video_description if isrc else True
+            
+#             # Compare release dates and ISRC if provided
+#             if published_at == release_date_formatted or isrc_match:
+#                 print("Exact match found based on release date and ISRC youtube")
+#                 return f"https://www.youtube.com/watch?v={video_id}"
+        
+
+#         # No exact match, return the first result as fallback
+#         if response_data['items']:
+#             first_video_id = response_data['items'][0]['id']['videoId']
+#             print("No exact match found, returning first result youtube")
+#             return f"https://www.youtube.com/watch?v={first_video_id}"  
+        
+#         print("No videos found")
+#         return None
+
+
+def get_youtube_video_link(artist_name, track_name, release_date, isrc=None): 
     api_key = settings.YOUTUBE_API_KEY
     search_url = "https://www.googleapis.com/youtube/v3/search"
     
     # Convert input release_date from DD/MM/YYYY to YYYY-MM-DD
     try:
         day, month, year = release_date.split("/")
-        release_date_formatted = f"{year}-{month}-{day}"  # Convert to YYYY-MM-DD
+        release_date_formatted = f"{year}-{month}-{day}"
     except ValueError:
         print("Invalid release date format. Please use DD/MM/YYYY.")
         release_date_formatted = ""
     
-    # Build search query
     query = f"{artist_name} {track_name}"
     
     params = {
@@ -28,75 +82,101 @@ def get_youtube_video_link(artist_name, track_name, release_date, isrc=None):
     response = requests.get(search_url, params=params)
     response_data = response.json()
     
-    try:
-        for item in response_data['items']:
-            video_id = item['id']['videoId']
-            video_title = item['snippet']['title']
-            published_at = item['snippet']['publishedAt'][:10]  # Extract YYYY-MM-DD from publishedAt
-            
-            # Assume the ISRC is included in the title or description (requires proper matching logic)
-            video_description = item['snippet'].get('description', "")
-            isrc_match = isrc in video_title or isrc in video_description if isrc else True
-            
-            # Compare release dates and ISRC if provided
-            if published_at == release_date_formatted or isrc_match:
-                print("Exact match found based on release date and ISRC youtube")
-                return f"https://www.youtube.com/watch?v={video_id}"
-        
+    best_match_video = None
+    best_match_score = 0
 
-        # No exact match, return the first result as fallback
-        if response_data['items']:
-            first_video_id = response_data['items'][0]['id']['videoId']
-            print("No exact match found, returning first result youtube")
-            return f"https://www.youtube.com/watch?v={first_video_id}"  
+    try:
+        for item in response_data.get('items', []):
+            video_id = item.get('id', {}).get('videoId')
+            snippet = item.get('snippet')
+
+            if not video_id or not snippet:
+                continue  # Skip items with missing data
+
+            video_title = snippet.get('title', '')
+            published_at = snippet.get('publishedAt', '')[:10]
+            video_description = snippet.get('description', '')
+
+            isrc_match = isrc in video_title or isrc in video_description if isrc else True
+
+            if published_at == release_date_formatted or isrc_match:
+                print("Exact match found based on release date and ISRC")
+                return f"https://www.youtube.com/watch?v={video_id}"
+            
+            target_string = f"{artist_name} {track_name}".lower()
+            current_title = video_title.lower()
+            similarity = SequenceMatcher(None, target_string, current_title).ratio()
+
+            if similarity > best_match_score:
+                best_match_score = similarity
+                best_match_video = video_id
+        
+        if best_match_video:
+            print(f"No exact match found, returning best matched title with similarity {best_match_score}")
+            return f"https://www.youtube.com/watch?v={best_match_video}"
         
         print("No videos found")
+        return None
+    except Exception as e:
+        print(f"Error occurred: {e}")
         return None
     
     except (KeyError, IndexError) as e:
         print(f"Error while processing the response: {e}")
         return None
+
 
 
 def get_deezer_track_link(artist_name, track_name, release_date=None, isrc=None):
     search_url = "https://api.deezer.com/search"
     
-    # Construct the search query
     query = f"artist:'{artist_name}' track:'{track_name}'"
-   
     params = {
         "q": query,
-        "limit": 10,  # Fetch multiple results for filtering
+        "limit": 10,
     }
-    
+
     response = requests.get(search_url, params=params)
     response_data = response.json()
-    
+
     try:
+        best_match = None
+        highest_score = 0
+
         for track in response_data.get('data', []):
             track_isrc = track.get('isrc')
             album = track.get('album', {})
             track_release_date = album.get('release_date')
 
-            # Check for release_date and ISRC
+            # Exact match
             date_match = release_date is None or release_date == track_release_date
             isrc_match = isrc is None or isrc == track_isrc
-            
+
             if date_match and isrc_match:
-                print("Exact match found based on release date and ISRC deexer")
+                print("✅ Exact match found based on release date and ISRC (Deezer)")
                 return track.get('link')
-        
-        # No exact match, return the first result as fallback
-        if response_data.get('data'):
-            print("No exact match found, returning the first result deezer")
-            return response_data['data'][0].get('link')
-        
-        print("No tracks found")
+
+            # Fuzzy match fallback
+            input_combo = f"{artist_name.lower()} {track_name.lower()}"
+            result_combo = f"{track.get('artist', {}).get('name', '').lower()} {track.get('title', '').lower()}"
+            score = difflib.SequenceMatcher(None, input_combo, result_combo).ratio()
+
+            if score > highest_score:
+                highest_score = score
+                best_match = track.get('link')
+
+        if best_match:
+            print(f"🔍 Best fuzzy match found with score {highest_score:.2f} (Deezer)")
+            return best_match
+
+        print("❌ No tracks found")
         return None
-    
-    except (KeyError, IndexError) as e:
+
+    except (KeyError, IndexError, TypeError) as e:
         print(f"Error while processing the response: {e}")
         return None
+
+
 
 
 def get_apple_music_link(artist_name, track_name, release_date=None, isrc=None):
@@ -104,35 +184,45 @@ def get_apple_music_link(artist_name, track_name, release_date=None, isrc=None):
     params = {
         "term": f"{artist_name} {track_name}",
         "media": "music",
-        "limit": 10,  # Retrieve multiple results for filtering
+        "limit": 10,
         "entity": "song"
     }
-    
+
     response = requests.get(search_url, params=params)
     response_data = response.json()
-    
+
     try:
-        for result in response_data['results']:
-            track_release_date = result.get('releaseDate', '')[:10]  # Extract YYYY-MM-DD
-            track_isrc = result.get('isrc', '')  # Retrieve ISRC
-            
-            # Check release_date and isrc if provided
-            date_match = release_date is None or release_date in track_release_date
+        best_match = None
+        highest_score = 0
+
+        for result in response_data.get('results', []):
+            track_release_date = result.get('releaseDate', '')[:10]
+            track_isrc = result.get('isrc', '')
+
+            date_match = release_date is None or release_date == track_release_date
             isrc_match = isrc is None or isrc == track_isrc
-            
-            if date_match or isrc_match:
-                print("Exact match found based on release date and ISRC apple music")
+
+            if date_match and isrc_match:
+                print("✅ Exact match found based on release date and ISRC (Apple Music)")
                 return result['trackViewUrl']
-        
-        # No exact match, return the first result as fallback
-        if response_data['results']:
-            print("No exact match found, returning first result apple music")
-            return response_data['results'][0]['trackViewUrl']
-        
-        print("No tracks found")
+
+            # Fuzzy best match fallback
+            input_combo = f"{artist_name.lower()} {track_name.lower()}"
+            result_combo = f"{result.get('artistName', '').lower()} {result.get('trackName', '').lower()}"
+            score = difflib.SequenceMatcher(None, input_combo, result_combo).ratio()
+
+            if score > highest_score:
+                highest_score = score
+                best_match = result['trackViewUrl']
+
+        if best_match:
+            print(f"🔍 Best fuzzy match found with score {highest_score:.2f} (Apple Music)")
+            return best_match
+
+        print("❌ No tracks found")
         return None
-    
-    except (IndexError, KeyError) as e:
+
+    except (IndexError, KeyError, TypeError) as e:
         print(f"Error while processing the response: {e}")
         return None
 
@@ -153,26 +243,42 @@ def search_amazon_music_with_google(artist_name, track_name, release_date=None, 
     response_data = response.json()
     
     try:
+        best_match = None
+        highest_score = 0
+
         for item in response_data.get('items', []):
-            # Extract metadata from the search result snippet
-            snippet = item.get('snippet', '').lower()
             link = item.get('link', '')
+            snippet = item.get('snippet', '').lower()
+            title = item.get('title', '').lower()
             
-            # Check for release_date and ISRC in snippet (if provided)
-            date_match = release_date is None or release_date in snippet
-            isrc_match = isrc is None or isrc in snippet
+            # Check for metadata match
+            date_match = release_date is None or release_date in snippet or release_date in title
+            isrc_match = isrc is None or isrc.lower() in snippet or isrc.lower() in title
             
             if date_match and isrc_match:
-                print("Exact match found based on release date and ISRC")
+                print("✅ Exact match found based on release date and ISRC (Amazon Music)")
                 return link
-        
-        # No exact match, return the first result as fallback
-        if response_data.get('items'):
-            print("No exact match found, returning first result")
-            return response_data['items'][0]['link']
-        
-        print("No tracks found")
+
+            # Fuzzy match fallback
+            input_combo = f"{artist_name.lower()} {track_name.lower()}"
+            result_combo = f"{title}"
+            score = difflib.SequenceMatcher(None, input_combo, result_combo).ratio()
+
+            if score > highest_score:
+                highest_score = score
+                best_match = link
+
+        if best_match:
+            print(f"🔍 Best fuzzy match found with score {highest_score:.2f} (Amazon Music)")
+            return best_match
+
+        print("❌ No tracks found")
         return None
+
+    except (IndexError, KeyError, TypeError) as e:
+        print(f"Error while processing the response: {e}")
+        return None
+
     
     except (IndexError, KeyError) as e:
         print(f"Error while processing the response: {e}")
@@ -195,27 +301,38 @@ def search_tidal_with_google(artist_name, track_name, release_date=None, isrc=No
     response_data = response.json()
     
     try:
+        best_match = None
+        highest_score = 0
+
         for item in response_data.get('items', []):
-            # Extract metadata from the search result snippet
-            snippet = item.get('snippet', '').lower()
             link = item.get('link', '')
+            snippet = item.get('snippet', '').lower()
+            title = item.get('title', '').lower()
             
-            # Check for release_date and ISRC in snippet (if provided)
-            date_match = release_date is None or release_date in snippet
-            isrc_match = isrc is None or isrc in snippet
+            # Match metadata if provided
+            date_match = release_date is None or release_date in snippet or release_date in title
+            isrc_match = isrc is None or isrc.lower() in snippet or isrc.lower() in title
             
-            if date_match or isrc_match:
-                print("Exact match found based on release date and ISRC tidal")
+            if date_match and isrc_match:
+                print("✅ Exact match found based on release date and ISRC (TIDAL)")
                 return link
-        
-        # No exact match, return the first result as fallback
-        if response_data.get('items'):
-            print("No exact match found, returning first result tidal")
-            return response_data['items'][0]['link']
-        
-        print("No tracks found")
+
+            # Fallback: fuzzy matching with title
+            input_combo = f"{artist_name.lower()} {track_name.lower()}"
+            result_combo = f"{title}"
+            score = difflib.SequenceMatcher(None, input_combo, result_combo).ratio()
+
+            if score > highest_score:
+                highest_score = score
+                best_match = link
+
+        if best_match:
+            print(f"🔍 Best fuzzy match found with score {highest_score:.2f} (TIDAL)")
+            return best_match
+
+        print("❌ No tracks found")
         return None
     
-    except (IndexError, KeyError) as e:
+    except (IndexError, KeyError, TypeError) as e:
         print(f"Error while processing the response: {e}")
         return None

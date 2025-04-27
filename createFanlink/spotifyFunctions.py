@@ -1,6 +1,7 @@
 import requests
 import base64
 from django.conf import settings
+import difflib
 
 
 
@@ -30,12 +31,11 @@ def get_spotify_track_link(artist_name, track_name, release_date, isrc=None):
     headers = {
         "Authorization": f"Bearer {access_token}"
     }
-    
-    
+
     # Convert input release_date from DD/MM/YYYY to YYYY-MM-DD
     try:
         day, month, year = release_date.split("/")
-        release_date_formatted = f"{year}-{month}-{day}"  # Convert to YYYY-MM-DD
+        release_date_formatted = f"{year}-{month}-{day}"
     except ValueError:
         print("Invalid release date format. Please use DD/MM/YYYY.")
         release_date_formatted = ""
@@ -44,39 +44,56 @@ def get_spotify_track_link(artist_name, track_name, release_date, isrc=None):
     params = {
         "q": query,
         "type": "track",
-        "limit": 10  # Retrieve multiple results for filtering
+        "limit": 10
     }
     
     response = requests.get(search_url, headers=headers, params=params)
     response_data = response.json()
-    print("spotify response",response_data)
+    
     try:
-        for track in response_data['tracks']['items']:
+        tracks = response_data['tracks']['items']
+        
+        # First, try to find exact match
+        for track in tracks:
             track_release_date = track['album']['release_date']
-            track_isrc = track.get('external_ids', {}).get('isrc').lower()
+            track_isrc = track.get('external_ids', {}).get('isrc', '').lower()
             
-            # Compare release dates and ISRC if provided
             if track_release_date == release_date_formatted and (not isrc or track_isrc == isrc.lower()):
-                print("Exact match found based on release date and ISRC spotify")
+                print("✅ Exact match found based on release date and ISRC (Spotify)")
                 return track['external_urls']['spotify']
         
-        # No exact match, return the first result as fallback
-        if response_data['tracks']['items']:
-            print("No Exact match found based on release date and ISRC spotify")
-            first_track = response_data['tracks']['items'][0]
-            return first_track['external_urls']['spotify']
+        # No exact match, find the best fuzzy match
+        best_match = None
+        highest_score = 0
+
+        for track in tracks:
+            title = track['name']
+            artist = track['artists'][0]['name']
+            
+            input_combo = f"{artist_name.lower()} {track_name.lower()}"
+            result_combo = f"{artist.lower()} {title.lower()}"
+            
+            score = difflib.SequenceMatcher(None, input_combo, result_combo).ratio()
+            if score > highest_score:
+                highest_score = score
+                best_match = track
+
+        if best_match:
+            print(f" Best fuzzy match found with score {highest_score:.2f} (Spotify)")
+            return best_match['external_urls']['spotify']
         
-        print("No tracks found")
+        print(" No suitable tracks found.")
         return None
     
-    except (KeyError, IndexError) as e:
-        print(f"Error while processing the response: {e}")
+    except (KeyError, IndexError, TypeError) as e:
+        print(f"Error while processing Spotify response: {e}")
         return None
 
 
 
 def replace_spaces_with_underscore(text):
-    return text.replace(" ", "_").replace("-", "_")
+    cleaned_text = text.strip()
+    return cleaned_text.replace(" ", "_").replace("-", "_")
 
 
 
@@ -95,31 +112,42 @@ def search_boomplay_with_google(artist_name, track_name, release_date=None, isrc
     response_data = response.json()
     
     try:
+        best_match = None
+        highest_score = 0
+
         for item in response_data.get('items', []):
             link = item['link']
-            
-            # Check for release_date and isrc in the snippet or title
             snippet = item.get('snippet', '').lower()
             title = item.get('title', '').lower()
-            
+
+            # Check for exact match based on release date and ISRC
             date_match = release_date is None or release_date in snippet or release_date in title
             isrc_match = isrc is None or isrc.lower() in snippet or isrc.lower() in title
-            
+
             if date_match and isrc_match:
-                print("Exact match found based on release date and ISRC boomplay")
+                print("✅ Exact match found based on release date and ISRC (Boomplay)")
                 return link
+            
+            # Compute similarity for fallback matching
+            input_combo = f"{artist_name.lower()} {track_name.lower()}"
+            result_combo = f"{title} {snippet}"
+            score = difflib.SequenceMatcher(None, input_combo, result_combo).ratio()
+
+            if score > highest_score:
+                highest_score = score
+                best_match = link
+
+        if best_match:
+            print(f"🔍 Best fuzzy match found with score {highest_score:.2f} (Boomplay)")
+            return best_match
         
-        # No exact match, return the first result as fallback
-        if response_data.get('items'):
-            print("No exact match found, returning first result boomplay")
-            return response_data['items'][0]['link']
-        
-        print("No links found")
+        print("❌ No Boomplay links found.")
         return None
     
-    except (IndexError, KeyError) as e:
+    except (IndexError, KeyError, TypeError) as e:
         print(f"Error while processing the response: {e}")
         return None
+
 
 
 def search_audiomack_with_google(artist_name, track_name, release_date=None, isrc=None):
@@ -137,30 +165,42 @@ def search_audiomack_with_google(artist_name, track_name, release_date=None, isr
     response_data = response.json()
     
     try:
+        best_match = None
+        highest_score = 0
+
         for item in response_data.get('items', []):
             link = item['link']
-            
-            # Attempt to validate release_date and ISRC in the description or snippet
             snippet = item.get('snippet', '').lower()
-            
-            date_match = release_date is None or release_date in snippet
-            isrc_match = isrc is None or isrc.lower() in snippet
-            
-            if date_match or isrc_match:
-                print("Exact match found based on release date and ISRC audiomack")
+            title = item.get('title', '').lower()
+
+            # Exact match check
+            date_match = release_date is None or release_date in snippet or release_date in title
+            isrc_match = isrc is None or isrc.lower() in snippet or isrc.lower() in title
+
+            if date_match and isrc_match:
+                print("✅ Exact match found based on release date and ISRC (Audiomack)")
                 return link
-        
-        # No exact match, return the first result as fallback
-        if response_data.get('items'):
-            print("No exact match found, returning first result audiomack")
-            return response_data['items'][0]['link']
-        
-        print("No links found")
+            
+            # Best match fallback using similarity
+            input_combo = f"{artist_name.lower()} {track_name.lower()}"
+            result_combo = f"{title} {snippet}"
+            score = difflib.SequenceMatcher(None, input_combo, result_combo).ratio()
+
+            if score > highest_score:
+                highest_score = score
+                best_match = link
+
+        if best_match:
+            print(f"🔍 Best fuzzy match found with score {highest_score:.2f} (Audiomack)")
+            return best_match
+
+        print("❌ No Audiomack links found.")
         return None
     
-    except (IndexError, KeyError) as e:
+    except (IndexError, KeyError, TypeError) as e:
         print(f"Error while processing the response: {e}")
         return None
+
 
 
 def get_itunes_track_link(artist_name, track_name, release_date=None, isrc=None):
@@ -175,26 +215,37 @@ def get_itunes_track_link(artist_name, track_name, release_date=None, isrc=None)
     response_data = response.json()
     
     try:
+        best_match = None
+        highest_score = 0
+
         for track in response_data.get('results', []):
-            track_release_date = track.get('releaseDate', '')[:10]  # Extract only the date part (YYYY-MM-DD)
-            track_isrc = track.get('isrc', '')  # iTunes includes ISRC if available
-            
-            # Check for release_date and isrc match
+            track_release_date = track.get('releaseDate', '')[:10]  # YYYY-MM-DD
+            track_isrc = track.get('isrc', '')
+
+            # Exact match
             date_match = release_date is None or release_date == track_release_date
             isrc_match = isrc is None or isrc == track_isrc
-            
-            if date_match or isrc_match:
-                print("Exact match found based on release date and ISRC itunes")
+
+            if date_match and isrc_match:
+                print("✅ Exact match found based on release date and ISRC (iTunes)")
                 return track['trackViewUrl']
-        
-        # No exact match, return the first result as fallback
-        if response_data.get('results'):
-            print("No exact match found, returning first result itunes")
-            return response_data['results'][0]['trackViewUrl']
-        
-        print("No tracks found")
+
+            # Best fuzzy match fallback
+            input_combo = f"{artist_name.lower()} {track_name.lower()}"
+            result_combo = f"{track.get('artistName', '').lower()} {track.get('trackName', '').lower()}"
+            score = difflib.SequenceMatcher(None, input_combo, result_combo).ratio()
+
+            if score > highest_score:
+                highest_score = score
+                best_match = track['trackViewUrl']
+
+        if best_match:
+            print(f"🔍 Best fuzzy match found with score {highest_score:.2f} (iTunes)")
+            return best_match
+
+        print("❌ No tracks found")
         return None
-    
-    except (IndexError, KeyError) as e:
+
+    except (IndexError, KeyError, TypeError) as e:
         print(f"Error while processing the response: {e}")
         return None

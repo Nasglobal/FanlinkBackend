@@ -25,10 +25,16 @@ from django.contrib.auth.hashers import check_password
 from rest_framework.permissions import IsAuthenticated
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 import json
 from .utils import fetch_sheet_data,get_last_updated_row,get_google_credentials
 from sendfile import sendfile
 from django.urls import reverse
+import openpyxl
+from openpyxl.styles import Font,PatternFill
+import csv
+from io import StringIO,BytesIO,TextIOWrapper
 import os
 import sys
 import shutil
@@ -102,6 +108,7 @@ class FanLinksViewSet(viewsets.ModelViewSet):
 
         artist = replace_spaces_with_underscore(artist_name)
         track = replace_spaces_with_underscore(track_name)
+        missingLinks = ""
         
         if not artist_name or not track_name:
             return JsonResponse({"error": "Artist name and track name are required."}, status=400)
@@ -118,7 +125,8 @@ class FanLinksViewSet(viewsets.ModelViewSet):
 
 
         if track_link or video_link or boomplay_link or audiomack_link or itunes_link or deezer_link or apple_music_link or amazon_music_link or tidal_link:
-            fanlink = f"/{artist}-{track}"
+            fanlinks = f"/{artist}-{track}"
+            fanlink = f"https://fanlink.51lexapps.com/{artist}-{track}"
             try:
                check_fan_links = FanLinks.objects.get(ArtistName=artist,TrackName=track)
                check_fan_links.SpotifyLink = track_link
@@ -134,19 +142,37 @@ class FanLinksViewSet(viewsets.ModelViewSet):
                check_fan_links.save()
                
             except FanLinks.DoesNotExist:
-                
                 FanLinks(ArtistName=artist,TrackName=track,SpotifyLink=track_link,AppleLink=apple_music_link,AmazonLink=amazon_music_link,YoutubeLink=video_link,ItunesLink=itunes_link,AudiomackLink=audiomack_link,DeezerLink=deezer_link,TidalLink=tidal_link,Boomplay=boomplay_link,Description=description,UPC=isrc,ReleaseDate=release_date,Source=source).save()
+            if not track_link : 
+                missingLinks = missingLinks + "Spotify,"
+            if not video_link:
+                missingLinks = missingLinks + "Youtube,"
+            if not boomplay_link:
+                missingLinks = missingLinks + "Boomplay,"
+            if not audiomack_link:
+                missingLinks = missingLinks + "Audiomack,"
+            if not itunes_link:
+                missingLinks = missingLinks + "Itunes,"
+            if not deezer_link:
+                missingLinks = missingLinks + "Deezer,"
+            if not apple_music_link:
+                missingLinks = missingLinks + "Apple Music,"
+            if not amazon_music_link:
+                missingLinks = missingLinks + "Amazon,"
+            if not tidal_link:
+                missingLinks = missingLinks + "Tidal"
             try:
                 releasesList = Releases.objects.filter(Artists=artist_name,Title=track_name).first()
                 if releasesList is not None:
                     releasesList.FanlinkSent = fanlink
+                    releasesList.MissingLinks=missingLinks
                     releasesList.save()
                 else:
-                   Releases(Label=label_name,Artists=artist_name,Title=track_name,UPC=isrc,ReleaseDate="TBC",FanlinkSent=fanlink,Status="",Y="",MissingLinks="").save() 
+                   Releases(Label=label_name,Artists=artist_name,Title=track_name,UPC=isrc,ReleaseDate=release_date,FanlinkSent=fanlink,Status="",Y="",MissingLinks=missingLinks).save() 
             except Releases.DoesNotExist:
-                Releases(Label=label_name,Artists=artist_name,Title=track_name,UPC=isrc,ReleaseDate="TBC",FanlinkSent=fanlink,Status="",Y="",MissingLinks="").save()
+                Releases(Label=label_name,Artists=artist_name,Title=track_name,UPC=isrc,ReleaseDate=release_date,FanlinkSent=fanlink,Status="",Y="",MissingLinks=missingLinks).save()
             
-            return JsonResponse({"link": fanlink})
+            return JsonResponse({"link": fanlinks})
         else:
             return JsonResponse({"error": "Track not found."}, status=404)
 
@@ -328,6 +354,7 @@ def drive_webhook(request):
 def auto_generate_fanlink(artist_name,track_name,label_name,isrc,release_date): 
     artist = replace_spaces_with_underscore(artist_name)
     track = replace_spaces_with_underscore(track_name)
+    missingLinks = ""
     if not artist_name or not track_name:
         print("Artist name and track name are required.")
     else:   
@@ -357,8 +384,138 @@ def auto_generate_fanlink(artist_name,track_name,label_name,isrc,release_date):
             except FanLinks.DoesNotExist:
                 FanLinks(ArtistName=artist,TrackName=track,SpotifyLink=track_link,AppleLink=apple_music_link,AmazonLink=amazon_music_link,YoutubeLink=video_link,ItunesLink=itunes_link,AudiomackLink=audiomack_link,DeezerLink=deezer_link,TidalLink=tidal_link,Boomplay=boomplay_link,Description="auto generated",UPC=isrc,ReleaseDate=release_date,Source="youtube").save()
             fanlink = f"/{artist}-{track}"
-            Releases(Label=label_name,Artists=artist_name,Title=track_name,UPC=isrc,ReleaseDate="TBC",FanlinkSent=fanlink,Status="",Y="",MissingLinks="").save()
+            Releases(Label=label_name,Artists=artist_name,Title=track_name,UPC=isrc,ReleaseDate=release_date,FanlinkSent=fanlink,Status="",Y="",MissingLinks="").save()
 
+
+
+def generate_fanlink_toSheet(artist_name,track_name,label_name,isrc,release_date): 
+    artist = replace_spaces_with_underscore(artist_name)
+    track = replace_spaces_with_underscore(track_name)
+    missingLinks = ""
+    if not artist_name or not track_name:
+        print("Artist name and track name are required.")
+    else:   
+        track_link = get_spotify_track_link(artist_name, track_name, release_date,isrc)
+        video_link = get_youtube_video_link(artist_name, track_name, release_date,isrc)
+        boomplay_link = search_boomplay_with_google(artist_name, track_name, release_date,isrc)
+        audiomack_link = search_audiomack_with_google(artist_name, track_name, release_date,isrc)
+        itunes_link = get_itunes_track_link(artist_name, track_name, release_date,isrc)
+        deezer_link = get_deezer_track_link(artist_name, track_name, release_date,isrc)
+        apple_music_link = get_apple_music_link(artist_name, track_name, release_date,isrc)
+        amazon_music_link = search_amazon_music_with_google(artist_name, track_name, release_date,isrc)
+        tidal_link = search_tidal_with_google(artist_name, track_name, release_date,isrc)
+
+        if track_link or video_link or boomplay_link or audiomack_link or itunes_link or deezer_link or apple_music_link or amazon_music_link or tidal_link:
+            try:
+               check_fan_links = FanLinks.objects.get(ArtistName=artist,TrackName=track)
+               check_fan_links.SpotifyLink = track_link
+               check_fan_links.YoutubeLink = video_link
+               check_fan_links.Boomplay = boomplay_link
+               check_fan_links.AudiomackLink = audiomack_link
+               check_fan_links.ItunesLink = itunes_link
+               check_fan_links.DeezerLink = deezer_link
+               check_fan_links.AppleLink = apple_music_link
+               check_fan_links.AmazonLink = amazon_music_link
+               check_fan_links.TidalLink = tidal_link
+               check_fan_links.save()
+            except FanLinks.DoesNotExist:
+                FanLinks(ArtistName=artist,TrackName=track,SpotifyLink=track_link,AppleLink=apple_music_link,AmazonLink=amazon_music_link,YoutubeLink=video_link,ItunesLink=itunes_link,AudiomackLink=audiomack_link,DeezerLink=deezer_link,TidalLink=tidal_link,Boomplay=boomplay_link,Description="auto generated",UPC=isrc,ReleaseDate=release_date,Source="youtube").save()
+            fanlink = f"https://fanlink.51lexapps.com/{artist}-{track}"
+            if not track_link : 
+                missingLinks = missingLinks + "Spotify,"
+            if not video_link:
+                missingLinks = missingLinks + "Youtube,"
+            if not boomplay_link:
+                missingLinks = missingLinks + "Boomplay,"
+            if not audiomack_link:
+                missingLinks = missingLinks + "Audiomack,"
+            if not itunes_link:
+                missingLinks = missingLinks + "Itunes,"
+            if not deezer_link:
+                missingLinks = missingLinks + "Deezer,"
+            if not apple_music_link:
+                missingLinks = missingLinks + "Apple Music,"
+            if not amazon_music_link:
+                missingLinks = missingLinks + "Amazon,"
+            if not tidal_link:
+                missingLinks = missingLinks + "Tidal"
+
+            Releases(Label=label_name,Artists=artist_name,Title=track_name,UPC=isrc,ReleaseDate=release_date,FanlinkSent=fanlink,Status="",Y="",MissingLinks=missingLinks).save()
+            return {"fanlink":fanlink,"missingLinks":missingLinks}
+        else:
+            return {"fanlink":"Fanlink not found","missingLinks":missingLinks}
+
+@csrf_exempt
+def generate_fanlinks_in_batch(request):
+    # Authenticate and connect to Google Sheets
+    try:
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        # Get the absolute path to the root directory
+        BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+        # Full path to your credentials file
+        creds_path = os.path.join(BASE_DIR, "fanlink-440822-6316459498b3.json")
+
+        # Use the credentials path
+        creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
+        client = gspread.authorize(creds)
+        # Open Google Sheet by its key
+        spreadsheet = client.open_by_key("1j4DSWgEECumRDfJ6ZEOLg4NapMpxgRa-dX6QMifQCy0") 
+        # Open the specific worksheet
+        sheet = spreadsheet.worksheet("The Orchard")  # Change "Sheet1" if needed
+        expected_headers = ['Label', 'Artist', 'Release', 'UPC', 'Date', 'Links','ISRC','Fanlinks','MissingLinks']
+        all_data = sheet.get_all_records(expected_headers=expected_headers)
+        empty_fanlink_rows = [i for i, row in enumerate(all_data) if row.get('Fanlinks', '').strip() == '']
+        if not empty_fanlink_rows:
+            return JsonResponse({"message": "No unprocessed tracks found"})
+        else:
+            target_indexes = empty_fanlink_rows[:2]
+
+            for idx in target_indexes:
+                row_data = all_data[idx]
+                #fanlink = generate_fanlink_toSheet(row_data) 
+                fanlink = generate_fanlink_toSheet(row_data["Artist"],row_data["Release"],row_data["Label"],row_data["ISRC"],row_data["Date"])
+                sheet.update_cell(idx + 2, 8, fanlink["fanlink"])  # Row index +2 (header + 1-based)
+                sheet.update_cell(idx + 2, 9, fanlink["missingLinks"])
+            return JsonResponse({"message": "Fanlinks updated for rows"})
+    except Exception as e:  
+        #-7th dec pull back      
+        return JsonResponse({"error": str(e)}, status=500)
+
+@csrf_exempt
+def export_releases_fanlink(request):
+    # Generate Excel file
+    buffer = BytesIO()
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    
+    main_headers = [
+           'Label', 'Artist','Release','ISRC','ReleaseDate','Fanlink','MissingLinks'
+    ]
+    # Write the main data headers
+    for col_num, header in enumerate(main_headers, 1):
+        cell = ws.cell(row=1, column=col_num)
+        cell.value = header
+        cell.font = Font(bold=True)
+
+    for release in Releases.objects.all():
+        ws.append([
+            release.Label,
+            release.Artists,
+            release.Title,
+            release.UPC,
+            release.ReleaseDate,
+            release.FanlinkSent,
+            release.MissingLinks
+        ])
+
+    ws.append([])       
+    wb.save(buffer)
+    buffer.seek(0)
+    response = HttpResponse(buffer, content_type='application/zip')
+    response['Content-Disposition'] = f'attachment; filename=Releases_fanlinks.xlsx'
+
+    return response
 
 
 
