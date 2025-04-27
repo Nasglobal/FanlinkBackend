@@ -32,7 +32,7 @@ class Command(BaseCommand):
                 if not empty_fanlink_rows:
                     print("No empty Fanlink found on the sheet")
                 else:
-                    target_indexes = empty_fanlink_rows[:2]
+                    target_indexes = empty_fanlink_rows[:5]
 
                     for idx in target_indexes:
                         row_data = all_data[idx]
