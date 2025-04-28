@@ -355,6 +355,7 @@ def auto_generate_fanlink(artist_name,track_name,label_name,isrc,release_date):
     artist = replace_spaces_with_underscore(artist_name)
     track = replace_spaces_with_underscore(track_name)
     missingLinks = ""
+    src = ""
     if not artist_name or not track_name:
         print("Artist name and track name are required.")
     else:   
@@ -369,6 +370,10 @@ def auto_generate_fanlink(artist_name,track_name,label_name,isrc,release_date):
         tidal_link = search_tidal_with_google(artist_name, track_name, release_date,isrc)
 
         if track_link or video_link or boomplay_link or audiomack_link or itunes_link or deezer_link or apple_music_link or amazon_music_link or tidal_link:
+            if video_link :
+                src = "youtube"
+            else:
+                src = "spotify"
             try:
                check_fan_links = FanLinks.objects.get(ArtistName=artist,TrackName=track)
                check_fan_links.SpotifyLink = track_link
@@ -380,9 +385,10 @@ def auto_generate_fanlink(artist_name,track_name,label_name,isrc,release_date):
                check_fan_links.AppleLink = apple_music_link
                check_fan_links.AmazonLink = amazon_music_link
                check_fan_links.TidalLink = tidal_link
+               check_fan_links.Source = src
                check_fan_links.save()
             except FanLinks.DoesNotExist:
-                FanLinks(ArtistName=artist,TrackName=track,SpotifyLink=track_link,AppleLink=apple_music_link,AmazonLink=amazon_music_link,YoutubeLink=video_link,ItunesLink=itunes_link,AudiomackLink=audiomack_link,DeezerLink=deezer_link,TidalLink=tidal_link,Boomplay=boomplay_link,Description="auto generated",UPC=isrc,ReleaseDate=release_date,Source="youtube").save()
+                FanLinks(ArtistName=artist,TrackName=track,SpotifyLink=track_link,AppleLink=apple_music_link,AmazonLink=amazon_music_link,YoutubeLink=video_link,ItunesLink=itunes_link,AudiomackLink=audiomack_link,DeezerLink=deezer_link,TidalLink=tidal_link,Boomplay=boomplay_link,Description="auto generated",UPC=isrc,ReleaseDate=release_date,Source=src).save()
             fanlink = f"/{artist}-{track}"
             Releases(Label=label_name,Artists=artist_name,Title=track_name,UPC=isrc,ReleaseDate=release_date,FanlinkSent=fanlink,Status="",Y="",MissingLinks="").save()
 
@@ -392,6 +398,7 @@ def generate_fanlink_toSheet(artist_name,track_name,label_name,isrc,release_date
     artist = replace_spaces_with_underscore(artist_name)
     track = replace_spaces_with_underscore(track_name)
     missingLinks = ""
+    src = ""
     if not artist_name or not track_name:
         print("Artist name and track name are required.")
     else:   
@@ -406,6 +413,11 @@ def generate_fanlink_toSheet(artist_name,track_name,label_name,isrc,release_date
         tidal_link = search_tidal_with_google(artist_name, track_name, release_date,isrc)
 
         if track_link or video_link or boomplay_link or audiomack_link or itunes_link or deezer_link or apple_music_link or amazon_music_link or tidal_link:
+            if video_link :
+                src = "youtube"
+            else:
+                src = "spotify"
+
             try:
                check_fan_links = FanLinks.objects.get(ArtistName=artist,TrackName=track)
                check_fan_links.SpotifyLink = track_link
@@ -417,9 +429,10 @@ def generate_fanlink_toSheet(artist_name,track_name,label_name,isrc,release_date
                check_fan_links.AppleLink = apple_music_link
                check_fan_links.AmazonLink = amazon_music_link
                check_fan_links.TidalLink = tidal_link
+               check_fan_links.Source = src
                check_fan_links.save()
             except FanLinks.DoesNotExist:
-                FanLinks(ArtistName=artist,TrackName=track,SpotifyLink=track_link,AppleLink=apple_music_link,AmazonLink=amazon_music_link,YoutubeLink=video_link,ItunesLink=itunes_link,AudiomackLink=audiomack_link,DeezerLink=deezer_link,TidalLink=tidal_link,Boomplay=boomplay_link,Description="auto generated",UPC=isrc,ReleaseDate=release_date,Source="youtube").save()
+                FanLinks(ArtistName=artist,TrackName=track,SpotifyLink=track_link,AppleLink=apple_music_link,AmazonLink=amazon_music_link,YoutubeLink=video_link,ItunesLink=itunes_link,AudiomackLink=audiomack_link,DeezerLink=deezer_link,TidalLink=tidal_link,Boomplay=boomplay_link,Description="auto generated",UPC=isrc,ReleaseDate=release_date,Source=src).save()
             fanlink = f"https://fanlink.51lexapps.com/{artist}-{track}"
             if not track_link : 
                 missingLinks = missingLinks + "Spotify,"
