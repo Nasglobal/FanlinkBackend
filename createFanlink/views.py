@@ -619,6 +619,7 @@ class UploadAccountSheetView(APIView):
             skiprows=2,
             converters={col: str for col in columns}
         )
+        df = trim_at_first_empty_row(df)
         df.columns = df.columns.map(str)
         df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
         df.replace([float('inf'), float('-inf')], '', inplace=True)
@@ -829,6 +830,12 @@ class UploadAccountSheetView(APIView):
         return Response({
             "message": "Uploaded and appended successfully"
         })
+
+def trim_at_first_empty_row(dataframe):
+    for idx, row in dataframe.iterrows():
+        if row.isnull().all() or (row.astype(str).str.strip() == '').all():
+            return dataframe.iloc[:idx]
+    return dataframe
 
 
     
