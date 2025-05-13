@@ -208,7 +208,7 @@ def get_itunes_track_link(artist_name, track_name, release_date=None, isrc=None)
     params = {
         "term": f"{artist_name} {track_name}",
         "media": "music",
-        "limit": 10,  # Fetch multiple results for filtering
+        "limit": 20,  # Fetch multiple results for filtering
     }
     
     response = requests.get(search_url, params=params)

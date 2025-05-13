@@ -2,22 +2,111 @@ import requests
 from django.conf import settings
 import difflib
 from difflib import SequenceMatcher
+import re
 
 
 
-# def get_youtube_video_link(artist_name, track_name, release_date, isrc=None):
+
+
+
+
+def get_youtube_video_link(artist_name, track_name, release_date, isrc=None): 
+    api_key = settings.YOUTUBE_API_KEY
+    #Convert release_date from DD/MM/YYYY to YYYY-MM-DD
+    try:
+        day, month, year = release_date.split("/")
+        release_date_formatted = f"{year}-{month}-{day}"
+        print("valid date:",release_date_formatted)
+
+    except ValueError:
+        print("Invalid release date format. Please use DD/MM/YYYY.")
+        release_date_formatted = ""
+
+    query = f"{artist_name} {track_name}"
+    
+    # Step 1: Search videos
+    search_url = "https://www.googleapis.com/youtube/v3/search"
+    search_params = {
+        "part": "snippet",
+        "q": query,
+        "type": "video",
+        "maxResults": 20,
+        "key": api_key,
+    }
+
+    search_response = requests.get(search_url, params=search_params)
+    search_data = search_response.json()
+
+    best_match_video = None
+    best_match_score = 0
+
+    try:
+        video_ids = [item['id']['videoId'] for item in search_data.get('items', []) if 'videoId' in item['id']]
+
+        if not video_ids:
+            print("No video IDs found in search results")
+            return None
+
+        # Step 2: Get full details for all found videos
+        videos_url = "https://www.googleapis.com/youtube/v3/videos"
+        videos_params = {
+            "part": "snippet",
+            "id": ",".join(video_ids),
+            "key": api_key,
+        }
+
+        videos_response = requests.get(videos_url, params=videos_params)
+        videos_data = videos_response.json()
+
+        for item in videos_data.get('items', []):
+            video_id = item.get('id')
+            snippet = item.get('snippet', {})
+            title = snippet.get('title', '')
+            description = snippet.get('description', '')
+
+            # Check for release date pattern in description
+            match = re.search(r"Released on:\s*(\d{4}-\d{2}-\d{2})", description)
+            description_release_date = match.group(1) if match else ""
+            print("description_release_date:",description_release_date)
+            # Check ISRC match
+            isrc_match = isrc in title or isrc in description if isrc else True
+
+            if description_release_date == release_date_formatted or isrc_match:
+                print("Exact match found based on description release date or ISRC youtube")
+                return f"https://www.youtube.com/watch?v={video_id}"
+
+            # Fallback: check title similarity
+            similarity = SequenceMatcher(None, f"{artist_name} {track_name}".lower(), title.lower()).ratio()
+            if similarity > best_match_score:
+                best_match_score = similarity
+                best_match_video = video_id
+
+        if best_match_video:
+            print(f"No exact match found for youtube, returning best match with score {best_match_score}")
+            return f"https://www.youtube.com/watch?v={best_match_video}"
+
+        print("No suitable video found")
+        return None
+
+
+    except Exception as e:
+        print(f"Error occurred: {e}")
+        return None
+
+
+
+# def get_youtube_video_link(artist_name, track_name, release_date, isrc=None): 
 #     api_key = settings.YOUTUBE_API_KEY
 #     search_url = "https://www.googleapis.com/youtube/v3/search"
     
 #     # Convert input release_date from DD/MM/YYYY to YYYY-MM-DD
 #     try:
 #         day, month, year = release_date.split("/")
-#         release_date_formatted = f"{year}-{month}-{day}"  # Convert to YYYY-MM-DD
+#         release_date_formatted = f"{year}-{month}-{day}"
 #     except ValueError:
 #         print("Invalid release date format. Please use DD/MM/YYYY.")
 #         release_date_formatted = ""
     
-#     # Build search query
 #     query = f"{artist_name} {track_name}"
     
 #     params = {
@@ -31,99 +120,48 @@ from difflib import SequenceMatcher
 #     response = requests.get(search_url, params=params)
 #     response_data = response.json()
     
-#     try:
-#         for item in response_data['items']:
-#             video_id = item['id']['videoId']
-#             video_title = item['snippet']['title']
-#             published_at = item['snippet']['publishedAt'][:10]  # Extract YYYY-MM-DD from publishedAt
-            
-#             # Assume the ISRC is included in the title or description (requires proper matching logic)
-#             video_description = item['snippet'].get('description', "")
-#             isrc_match = isrc in video_title or isrc in video_description if isrc else True
-            
-#             # Compare release dates and ISRC if provided
-#             if published_at == release_date_formatted or isrc_match:
-#                 print("Exact match found based on release date and ISRC youtube")
-#                 return f"https://www.youtube.com/watch?v={video_id}"
-        
+#     best_match_video = None
+#     best_match_score = 0
 
-#         # No exact match, return the first result as fallback
-#         if response_data['items']:
-#             first_video_id = response_data['items'][0]['id']['videoId']
-#             print("No exact match found, returning first result youtube")
-#             return f"https://www.youtube.com/watch?v={first_video_id}"  
+#     try:
+#         for item in response_data.get('items', []):
+#             video_id = item.get('id', {}).get('videoId')
+#             snippet = item.get('snippet')
+
+#             if not video_id or not snippet:
+#                 continue  # Skip items with missing data
+
+#             video_title = snippet.get('title', '')
+#             published_at = snippet.get('publishedAt', '')[:10]
+#             video_description = snippet.get('description', '')
+
+#             isrc_match = isrc in video_title or isrc in video_description if isrc else True
+
+#             if published_at == release_date_formatted or isrc_match:
+#                 print("Exact match found based on release date and ISRC")
+#                 return f"https://www.youtube.com/watch?v={video_id}"
+            
+#             target_string = f"{artist_name} {track_name}".lower()
+#             current_title = video_title.lower()
+#             similarity = SequenceMatcher(None, target_string, current_title).ratio()
+
+#             if similarity > best_match_score:
+#                 best_match_score = similarity
+#                 best_match_video = video_id
+        
+#         if best_match_video:
+#             print(f"No exact match found, returning best matched title with similarity {best_match_score}")
+#             return f"https://www.youtube.com/watch?v={best_match_video}"
         
 #         print("No videos found")
 #         return None
-
-
-def get_youtube_video_link(artist_name, track_name, release_date, isrc=None): 
-    api_key = settings.YOUTUBE_API_KEY
-    search_url = "https://www.googleapis.com/youtube/v3/search"
+#     except Exception as e:
+#         print(f"Error occurred: {e}")
+#         return None
     
-    # Convert input release_date from DD/MM/YYYY to YYYY-MM-DD
-    try:
-        day, month, year = release_date.split("/")
-        release_date_formatted = f"{year}-{month}-{day}"
-    except ValueError:
-        print("Invalid release date format. Please use DD/MM/YYYY.")
-        release_date_formatted = ""
-    
-    query = f"{artist_name} {track_name}"
-    
-    params = {
-        "part": "snippet",
-        "q": query,
-        "type": "video",
-        "maxResults": 10,
-        "key": api_key,
-    }
-    
-    response = requests.get(search_url, params=params)
-    response_data = response.json()
-    
-    best_match_video = None
-    best_match_score = 0
-
-    try:
-        for item in response_data.get('items', []):
-            video_id = item.get('id', {}).get('videoId')
-            snippet = item.get('snippet')
-
-            if not video_id or not snippet:
-                continue  # Skip items with missing data
-
-            video_title = snippet.get('title', '')
-            published_at = snippet.get('publishedAt', '')[:10]
-            video_description = snippet.get('description', '')
-
-            isrc_match = isrc in video_title or isrc in video_description if isrc else True
-
-            if published_at == release_date_formatted or isrc_match:
-                print("Exact match found based on release date and ISRC")
-                return f"https://www.youtube.com/watch?v={video_id}"
-            
-            target_string = f"{artist_name} {track_name}".lower()
-            current_title = video_title.lower()
-            similarity = SequenceMatcher(None, target_string, current_title).ratio()
-
-            if similarity > best_match_score:
-                best_match_score = similarity
-                best_match_video = video_id
-        
-        if best_match_video:
-            print(f"No exact match found, returning best matched title with similarity {best_match_score}")
-            return f"https://www.youtube.com/watch?v={best_match_video}"
-        
-        print("No videos found")
-        return None
-    except Exception as e:
-        print(f"Error occurred: {e}")
-        return None
-    
-    except (KeyError, IndexError) as e:
-        print(f"Error while processing the response: {e}")
-        return None
+#     except (KeyError, IndexError) as e:
+#         print(f"Error while processing the response: {e}")
+#         return None
 
 
 

@@ -164,16 +164,17 @@ DATABASES = {
 #         'ENGINE': 'django.db.backends.mysql',
 #         'NAME': 'fanlink',
 #         #'HOST': '172.17.0.1',
-#         'HOST': 'mysql',
+#         #'HOST': 'mysql',
 #         'PORT': '3306',
-#         #'USER': 'username',
+#         'USER': 'username',
 #         'USER': 'fanlink_user',
 #         #'PASSWORD': 'password'
 #         'PASSWORD': 'Chime@1989',
 #         #'PASSWORD': 'Sq!p@per13',
-#         #'HOST': 'localhost',
-#         #'USER': 'root',
+#         'HOST': 'localhost',
+#         'USER': 'root',
 #     }
+    
 # }
 
 #database_url = os.environ.get("DATABASE_URL")

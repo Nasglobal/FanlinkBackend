@@ -32,6 +32,7 @@ from .utils import fetch_sheet_data,get_last_updated_row,get_google_credentials
 from sendfile import sendfile
 from django.urls import reverse
 import openpyxl
+from openpyxl import load_workbook
 from openpyxl.styles import Font,PatternFill
 import csv
 from io import StringIO,BytesIO,TextIOWrapper
@@ -40,6 +41,17 @@ import sys
 import shutil
 import ffmpeg
 import pandas as pd
+from google.oauth2.service_account import Credentials
+from gspread_formatting import (
+    format_cell_range,
+    CellFormat,
+    Borders,
+    Border,
+    Color,
+    TextFormat,
+    NumberFormat
+)
+import numpy as np
 import io
 import random
 import string
@@ -47,6 +59,7 @@ import requests
 from datetime import datetime
 from .spotifyFunctions import get_spotify_track_link,replace_spaces_with_underscore,search_boomplay_with_google,search_audiomack_with_google,get_itunes_track_link
 from .youtubeFunctions import get_youtube_video_link,get_deezer_track_link,get_apple_music_link,search_amazon_music_with_google,search_tidal_with_google
+
 
 # Global variable to store previously fetched rows
 previous_rows = []
@@ -587,6 +600,247 @@ class UploadVideoView(APIView):
         })
 
 
+class UploadAccountSheetView(APIView):
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request, *args, **kwargs):
+        # Get uploaded file
+        file_obj = request.FILES['file_sheet']
+        excel_data = file_obj.read()
+
+        # Read Excel into DataFrame, preserve strings
+        # First, get column names from the file
+        temp_df = pd.read_excel(io.BytesIO(excel_data), skiprows=2, nrows=0)
+        columns = temp_df.columns
+
+        # Now read again with converters by column name
+        df = pd.read_excel(
+            io.BytesIO(excel_data),
+            skiprows=2,
+            converters={col: str for col in columns}
+        )
+        df.columns = df.columns.map(str)
+        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+        df.replace([float('inf'), float('-inf')], '', inplace=True)
+        df.fillna('', inplace=True)
+
+        # Read date as string
+        wb = load_workbook(io.BytesIO(excel_data), data_only=True)
+        ws = wb.active
+        raw_date = ws["B2"].value
+        if isinstance(raw_date, datetime):
+            date_value = raw_date.strftime("%b-%y")  # Example: Feb-25
+        else:
+            date_value = str(raw_date).strip()
+
+        # Google Sheets auth
+        scope = [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        creds_path = os.path.join(BASE_DIR, "fanlink-440822-6316459498b3.json")
+        creds = ServiceAccountCredentials.from_json_keyfile_name(creds_path, scope)
+        client = gspread.authorize(creds)
+
+        # Open spreadsheet and sheet
+        spreadsheet = client.open_by_key("1J-nNwBetOsqu6EZk3-KsVBWJ_8sPgBc8AWnq9L-3yd0")
+        sheet = spreadsheet.worksheet("Sheet1")
+
+        # Determine where to append
+        existing_data = sheet.get_all_values()
+        start_row = len(existing_data) + 2
+        sheet.update(f"B{start_row}", [[date_value]])
+
+        # Update data rows
+        table_start_row = start_row + 1
+        sheet.update(f"B{table_start_row}", [df.columns.tolist()])
+        max_cols = len(df.columns)
+
+        # Format last column values to 2 decimal places
+        last_col_index = df.shape[1] - 1  # 0-based index
+        formatted_data = []
+        for row in df.values.tolist():
+            if len(row) > last_col_index:
+                try:
+                    row[last_col_index] = "{:.2f}".format(float(row[last_col_index]))
+                except (ValueError, TypeError):
+                    pass
+            formatted_data.append(row + [''] * (max_cols - len(row)))
+
+        sheet.update(f"B{table_start_row + 1}", formatted_data)
+        table_end_row = table_start_row + len(df)
+
+
+        # Add total if available
+        xl = pd.read_excel(io.BytesIO(excel_data), header=None, dtype=str)
+        total_value = xl.iloc[table_end_row + 1, 6] if xl.shape[0] > table_end_row + 1 else ""
+        if total_value:
+            try:
+                total_value = "{:.2f}".format(float(total_value))
+            except (ValueError, TypeError):
+                pass
+            sheet.update(f"G{table_end_row + 1}", [[total_value]])
+
+        # 🎯 Formatting
+        black = Color(0, 0, 0)
+
+        border_format = CellFormat(
+            borders=Borders(
+                top=Border("SOLID", black),
+                bottom=Border("SOLID", black),
+                left=Border("SOLID", black),
+                right=Border("SOLID", black),
+            )
+        )
+
+        header_format = CellFormat(
+            textFormat=TextFormat(bold=True, foregroundColor=black),
+            borders=Borders(
+                top=Border("SOLID", black),
+                bottom=Border("SOLID", black),
+                left=Border("SOLID", black),
+                right=Border("SOLID", black),
+            )
+        )
+
+        last_col_letter = colnum_to_letter(df.shape[1] + 1)  # +1 because we start from column B
+        range_str = f"B{table_start_row}:{last_col_letter}{table_end_row}"
+
+        # Apply formatting
+        format_cell_range(sheet, range_str, border_format)
+        format_cell_range(sheet, f"B{table_start_row}:{last_col_letter}{table_start_row}", header_format)
+
+        # Apply 2-decimal formatting to last column
+        value_range = f"{last_col_letter}{table_start_row + 1}:{last_col_letter}{table_end_row}"
+        currency_format = CellFormat(
+            numberFormat=NumberFormat(type='NUMBER', pattern='0.00')
+        )
+        format_cell_range(sheet, value_range, currency_format)
+
+
+        # Compute and append calculated values to next column
+        calculated_column_index = df.shape[1] + 1  # +1 because we're adding a new column
+        calculated_column_letter_label = colnum_to_letter(calculated_column_index + 1)  # +1 for column B offset
+        calculated_column_letter_revenue = colnum_to_letter(calculated_column_index + 2)
+        calculated_column_letter_royalty_share = colnum_to_letter(calculated_column_index + 3)
+        calculated_column_letter_royalty = colnum_to_letter(calculated_column_index + 4)
+
+        calculated_column_letter_agent_percentage = colnum_to_letter(calculated_column_index + 6)
+        calculated_column_letter_agent_share = colnum_to_letter(calculated_column_index + 7)
+        calculated_column_letter_51lex = colnum_to_letter(calculated_column_index + 8)
+        calculated_column_letter_saheed = colnum_to_letter(calculated_column_index + 9)
+        calculated_column_letter_daniels = colnum_to_letter(calculated_column_index + 10)
+
+        calculated_values = []
+        rev_value = []
+        royalty_share = []
+        royalty_pay = []
+        agent_royalty_share = []
+        agent_royalty_pay = []
+        total_agent_share = 0
+        total_royalty_share = 0
+        total_revenue_share = 0
+        second_col_index = df.shape[1] - 5
+        for row in formatted_data[:-1]:
+            try:
+                last_value = float(row[last_col_index])
+                rev = (26.32/100)*last_value
+                revenue = round(rev, 2)  # Example: multiply by 1.1
+                label_percentage = "26.32"
+                tonename = str(row[second_col_index])
+                label_share = 0
+                agent_share = 0
+                if tonename.strip() == "Gwo Gwo Ngwo":
+                    label_share = 70
+                    agent_share = 10
+                elif tonename.strip() == "Gwo Gwo Ngwo Fast Jam Remix":
+                    label_share = 30 
+                    agent_share = 5
+                elif tonename.strip() == "Gwo Gwo Ngwo Remix":
+                    label_share = 30
+                    agent_share = 5
+                elif tonename.strip() == "Ka Esi Le Onye Isi Oche Gwo Gwo Ngwo":
+                    label_share = 70 
+                    agent_share = 10
+
+                royalty_payable = (label_share/100)*revenue
+                agent_share_payable = (agent_share/100)*royalty_payable
+
+                total_revenue_share = total_revenue_share + revenue
+                total_agent_share = total_agent_share + agent_share_payable
+                total_royalty_share = total_royalty_share + royalty_payable
+    
+            except (ValueError, TypeError):
+                label_percentage = ''
+                revenue = ""
+                royalty_payable = ""
+                label_share = ""
+                agent_share_payable = ""
+            calculated_values.append([label_percentage])
+            rev_value.append([revenue])
+            royalty_share.append([label_share])
+            royalty_pay.append([royalty_payable])
+            agent_royalty_share.append([agent_share])
+            agent_royalty_pay.append([agent_share_payable])
+
+        fiftyonelex_share = total_revenue_share - (total_agent_share+total_royalty_share)
+        # Update the calculated column in Google Sheets 
+        sheet.update(f"{calculated_column_letter_label}{table_start_row + 1}", calculated_values)
+
+        sheet.update(f"{calculated_column_letter_revenue}{table_start_row + 1}", rev_value)
+        total_row_number_rev = table_start_row + len(rev_value) + 1
+        sheet.update(f"{calculated_column_letter_revenue}{total_row_number_rev}", [[format(round(total_revenue_share, 2), ",.2f")]])
+
+        #royalty percentage
+        sheet.update(f"{calculated_column_letter_royalty_share}{table_start_row + 1}", royalty_share)
+        
+        #royalty pay data
+        sheet.update(f"{calculated_column_letter_royalty}{table_start_row + 1}", royalty_pay)
+        total_row_number_royalty_pay = table_start_row + len(royalty_pay) + 1
+        sheet.update(f"{calculated_column_letter_royalty}{total_row_number_royalty_pay}", [[format(round(total_royalty_share, 2), ",.2f")]])
+
+        #agent percentage
+        sheet.update(f"{calculated_column_letter_agent_percentage}{table_start_row + 1}", agent_royalty_share)
+        
+
+        #agent data appending
+        sheet.update(f"{calculated_column_letter_agent_share}{table_start_row + 1}", agent_royalty_pay)
+        total_row_number_agent_share = table_start_row + len(agent_royalty_pay) + 1
+        sheet.update(f"{calculated_column_letter_agent_share}{total_row_number_agent_share}", [[format(round(total_agent_share, 2), ",.2f")]])
+  
+        #51 lex share
+        total_row_number_51lex = table_start_row + len(agent_royalty_pay) + 1
+        sheet.update(f"{calculated_column_letter_51lex}{total_row_number_51lex}", [[format(round(fiftyonelex_share, 2), ",.2f")]])
+        
+        #Saheed share(10%)
+        saheed_share = (10/100)*fiftyonelex_share
+        total_row_number_saheed = table_start_row + len(agent_royalty_pay) + 1
+        sheet.update(f"{calculated_column_letter_saheed}{total_row_number_saheed}", [[format(round(saheed_share, 2), ",.2f")]])
+        
+
+        #Daniel share(5%)
+        daniel_share = (5/100)*fiftyonelex_share
+        total_row_number_daniels = table_start_row + len(agent_royalty_pay) + 1
+        sheet.update(f"{calculated_column_letter_daniels}{total_row_number_daniels}", [[format(round(daniel_share, 2), ",.2f")]])
+
+
+        return Response({
+            "message": "Uploaded and appended successfully"
+        })
+
+
+    
+def colnum_to_letter(n):
+    result = ""
+    while n > 0:
+        n, remainder = divmod(n - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
+
+    
 
 def serve_video(request, filename):
     """Serve video with proper headers for seeking support."""

@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.urls import path,include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
-from .views import MediaFileViewset,FanLinksViewSet,ReleasesViewSet,get_fanlink,RegisterView, LoginView,ProfileView,drive_webhook,search_tracks,UploadVideoView, trim_video, serve_video,download_split_folder,split_video,get_uploaded_videos,delete_video,download_trimmed_video,generate_fanlinks_in_batch,export_releases_fanlink
+from .views import MediaFileViewset,FanLinksViewSet,ReleasesViewSet,get_fanlink,RegisterView, LoginView,ProfileView,drive_webhook,search_tracks,UploadVideoView,UploadAccountSheetView, trim_video, serve_video,download_split_folder,split_video,get_uploaded_videos,delete_video,download_trimmed_video,generate_fanlinks_in_batch,export_releases_fanlink
 
 
 router = DefaultRouter()
@@ -23,6 +23,7 @@ urlpatterns = [
     path("api/search-tracks/", search_tracks, name="search_tracks"), 
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'), 
     path('upload/', UploadVideoView.as_view(), name='upload_video'),
+    path('upload-sheet/', UploadAccountSheetView.as_view(), name='upload_sheet'),
     path('trim-video/', trim_video, name='trim_video'),
     path("stream/videos/<str:filename>/", serve_video, name="stream_video"),
     path("split-video/", split_video, name="split_video"),  
