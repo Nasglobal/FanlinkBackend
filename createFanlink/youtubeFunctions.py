@@ -6,10 +6,6 @@ import re
 
 
 
-
-
-
-
 def get_youtube_video_link(artist_name, track_name, release_date, isrc=None): 
     api_key = settings.YOUTUBE_API_KEY
     #Convert release_date from DD/MM/YYYY to YYYY-MM-DD
@@ -22,15 +18,15 @@ def get_youtube_video_link(artist_name, track_name, release_date, isrc=None):
         print("Invalid release date format. Please use DD/MM/YYYY.")
         release_date_formatted = ""
 
-    query = f"{artist_name} {track_name}"
-    
+    query = f"{artist_name} {track_name} {release_date_formatted}"
+
     # Step 1: Search videos
     search_url = "https://www.googleapis.com/youtube/v3/search"
     search_params = {
         "part": "snippet",
         "q": query,
         "type": "video",
-        "maxResults": 20,
+        "maxResults": 50,
         "key": api_key,
     }
 
@@ -77,7 +73,7 @@ def get_youtube_video_link(artist_name, track_name, release_date, isrc=None):
 
             # Fallback: check title similarity
             similarity = SequenceMatcher(None, f"{artist_name} {track_name}".lower(), title.lower()).ratio()
-            if similarity > best_match_score:
+            if similarity > best_match_score and similarity >= 0.75 :
                 best_match_score = similarity
                 best_match_video = video_id
 
@@ -92,7 +88,6 @@ def get_youtube_video_link(artist_name, track_name, release_date, isrc=None):
     except Exception as e:
         print(f"Error occurred: {e}")
         return None
-
 
 
 # def get_youtube_video_link(artist_name, track_name, release_date, isrc=None): 
@@ -171,7 +166,7 @@ def get_deezer_track_link(artist_name, track_name, release_date=None, isrc=None)
     query = f"artist:'{artist_name}' track:'{track_name}'"
     params = {
         "q": query,
-        "limit": 10,
+        "limit": 50,
     }
 
     response = requests.get(search_url, params=params)
@@ -185,12 +180,11 @@ def get_deezer_track_link(artist_name, track_name, release_date=None, isrc=None)
             track_isrc = track.get('isrc')
             album = track.get('album', {})
             track_release_date = album.get('release_date')
-
             # Exact match
-            date_match = release_date is None or release_date == track_release_date
-            isrc_match = isrc is None or isrc == track_isrc
+            date_match =  release_date == track_release_date 
+            isrc_match = isrc == track_isrc
 
-            if date_match and isrc_match:
+            if date_match or isrc_match:
                 print("✅ Exact match found based on release date and ISRC (Deezer)")
                 return track.get('link')
 
@@ -199,7 +193,7 @@ def get_deezer_track_link(artist_name, track_name, release_date=None, isrc=None)
             result_combo = f"{track.get('artist', {}).get('name', '').lower()} {track.get('title', '').lower()}"
             score = difflib.SequenceMatcher(None, input_combo, result_combo).ratio()
 
-            if score > highest_score:
+            if score > highest_score and score >= 0.75: 
                 highest_score = score
                 best_match = track.get('link')
 
@@ -222,7 +216,7 @@ def get_apple_music_link(artist_name, track_name, release_date=None, isrc=None):
     params = {
         "term": f"{artist_name} {track_name}",
         "media": "music",
-        "limit": 10,
+        "limit": 50,
         "entity": "song"
     }
 
@@ -232,15 +226,14 @@ def get_apple_music_link(artist_name, track_name, release_date=None, isrc=None):
     try:
         best_match = None
         highest_score = 0
-
         for result in response_data.get('results', []):
             track_release_date = result.get('releaseDate', '')[:10]
             track_isrc = result.get('isrc', '')
 
-            date_match = release_date is None or release_date == track_release_date
-            isrc_match = isrc is None or isrc == track_isrc
+            date_match =  release_date == track_release_date
+            isrc_match = isrc == track_isrc
 
-            if date_match and isrc_match:
+            if date_match or isrc_match:
                 print("✅ Exact match found based on release date and ISRC (Apple Music)")
                 return result['trackViewUrl']
 
@@ -249,7 +242,7 @@ def get_apple_music_link(artist_name, track_name, release_date=None, isrc=None):
             result_combo = f"{result.get('artistName', '').lower()} {result.get('trackName', '').lower()}"
             score = difflib.SequenceMatcher(None, input_combo, result_combo).ratio()
 
-            if score > highest_score:
+            if score > highest_score and score >= 0.75:
                 highest_score = score
                 best_match = result['trackViewUrl']
 
@@ -257,7 +250,7 @@ def get_apple_music_link(artist_name, track_name, release_date=None, isrc=None):
             print(f"🔍 Best fuzzy match found with score {highest_score:.2f} (Apple Music)")
             return best_match
 
-        print("❌ No tracks found")
+        print("❌ No tracks found on Apple")
         return None
 
     except (IndexError, KeyError, TypeError) as e:
@@ -277,6 +270,7 @@ def search_amazon_music_with_google(artist_name, track_name, release_date=None, 
         "q": f"{artist_name} {track_name} site:music.amazon.com",
     }
     
+
     response = requests.get(search_url, params=params)
     response_data = response.json()
     
@@ -290,10 +284,10 @@ def search_amazon_music_with_google(artist_name, track_name, release_date=None, 
             title = item.get('title', '').lower()
             
             # Check for metadata match
-            date_match = release_date is None or release_date in snippet or release_date in title
-            isrc_match = isrc is None or isrc.lower() in snippet or isrc.lower() in title
+            date_match =  release_date in snippet or release_date in title 
+            isrc_match =  isrc.lower() in snippet or isrc.lower() in title
             
-            if date_match and isrc_match:
+            if date_match or isrc_match:
                 print("✅ Exact match found based on release date and ISRC (Amazon Music)")
                 return link
 
@@ -302,7 +296,7 @@ def search_amazon_music_with_google(artist_name, track_name, release_date=None, 
             result_combo = f"{title}"
             score = difflib.SequenceMatcher(None, input_combo, result_combo).ratio()
 
-            if score > highest_score:
+            if score > highest_score and score >= 0.75:
                 highest_score = score
                 best_match = link
 
@@ -310,7 +304,7 @@ def search_amazon_music_with_google(artist_name, track_name, release_date=None, 
             print(f"🔍 Best fuzzy match found with score {highest_score:.2f} (Amazon Music)")
             return best_match
 
-        print("❌ No tracks found")
+        print("❌ No tracks found on Amazon")
         return None
 
     except (IndexError, KeyError, TypeError) as e:
@@ -348,10 +342,10 @@ def search_tidal_with_google(artist_name, track_name, release_date=None, isrc=No
             title = item.get('title', '').lower()
             
             # Match metadata if provided
-            date_match = release_date is None or release_date in snippet or release_date in title
-            isrc_match = isrc is None or isrc.lower() in snippet or isrc.lower() in title
+            date_match =  release_date in snippet or release_date in title 
+            isrc_match = isrc.lower() in snippet or isrc.lower() in title
             
-            if date_match and isrc_match:
+            if date_match or isrc_match:
                 print("✅ Exact match found based on release date and ISRC (TIDAL)")
                 return link
 
@@ -360,7 +354,7 @@ def search_tidal_with_google(artist_name, track_name, release_date=None, isrc=No
             result_combo = f"{title}"
             score = difflib.SequenceMatcher(None, input_combo, result_combo).ratio()
 
-            if score > highest_score:
+            if score > highest_score and score >= 0.75:
                 highest_score = score
                 best_match = link
 
@@ -368,9 +362,11 @@ def search_tidal_with_google(artist_name, track_name, release_date=None, isrc=No
             print(f"🔍 Best fuzzy match found with score {highest_score:.2f} (TIDAL)")
             return best_match
 
-        print("❌ No tracks found")
+        print("❌ No tracks found on Tidal")
         return None
     
     except (IndexError, KeyError, TypeError) as e:
         print(f"Error while processing the response: {e}")
         return None
+
+

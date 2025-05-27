@@ -831,6 +831,7 @@ class UploadAccountSheetView(APIView):
             "message": "Uploaded and appended successfully"
         })
 
+
 def trim_at_first_empty_row(dataframe):
     for idx, row in dataframe.iterrows():
         if row.isnull().all() or (row.astype(str).str.strip() == '').all():
