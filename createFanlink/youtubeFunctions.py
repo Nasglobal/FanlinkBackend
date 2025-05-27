@@ -32,6 +32,9 @@ def get_youtube_video_link(artist_name, track_name, release_date, isrc=None):
 
     search_response = requests.get(search_url, params=search_params)
     search_data = search_response.json()
+    if not search_data:
+        print("❌ no search response found")
+        return None
 
     best_match_video = None
     best_match_score = 0

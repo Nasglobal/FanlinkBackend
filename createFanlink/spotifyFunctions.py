@@ -100,6 +100,11 @@ def get_spotify_track_link(artist_name, track_name, release_date=None, isrc=None
 
 
     res = requests.get(search_url, headers=headers, params=params).json()
+
+    if not res:
+        print("❌ no search response found")
+        return None
+
     for track in res.get('tracks', {}).get('items', []):
         print("direct search:", track['name'])
         
@@ -140,6 +145,10 @@ def get_spotify_track_link(artist_name, track_name, release_date=None, isrc=None
         "type": "artist",
         "limit": 50
     }).json()
+
+    if not artist_search:
+        print("❌ no arsits search found")
+        return None 
 
     artists = artist_search.get('artists', {}).get('items', [])
     matched_artist = next((a for a in artists if a['name'].strip().lower() == artist_name.strip().lower()), None)
