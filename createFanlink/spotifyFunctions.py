@@ -139,52 +139,52 @@ def get_spotify_track_link(artist_name, track_name, release_date=None, isrc=None
 
 
     # --- Fallback: Search artist, list albums, and check tracks --- 
-    print("🔄 Searching artist and their albums as fallback...")
-    artist_search = requests.get(search_url, headers=headers, params={
-        "q": artist_name,
-        "type": "artist",
-        "limit": 20
-    }).json()
+    # print("🔄 Searching artist and their albums as fallback...")
+    # artist_search = requests.get(search_url, headers=headers, params={
+    #     "q": artist_name,
+    #     "type": "artist",
+    #     "limit": 20
+    # }).json()
 
-    if not artist_search:
-        print("❌ no arsits search found")
-        return None 
+    # if not artist_search:
+    #     print("❌ no arsits search found")
+    #     return None 
 
-    print("some artists found after search")
-    artists = artist_search.get('artists', {}).get('items', [])
-    matched_artist = next((a for a in artists if a['name'].strip().lower() == artist_name.strip().lower()), None)
-    print("Matched artist analysis done...")
-    if not matched_artist and artists:
-        close = get_close_matches(artist_name, [a['name'] for a in artists], n=1, cutoff=0.6)
-        if close:
-            matched_artist = next((a for a in artists if a['name'] == close[0]), None)
-            print("⚠️ Using fuzzy match artist:", close[0])
+    # print("some artists found after search")
+    # artists = artist_search.get('artists', {}).get('items', [])
+    # matched_artist = next((a for a in artists if a['name'].strip().lower() == artist_name.strip().lower()), None)
+    # print("Matched artist analysis done...")
+    # if not matched_artist and artists:
+    #     close = get_close_matches(artist_name, [a['name'] for a in artists], n=1, cutoff=0.6)
+    #     if close:
+    #         matched_artist = next((a for a in artists if a['name'] == close[0]), None)
+    #         print("⚠️ Using fuzzy match artist:", close[0])
 
 
-    if not matched_artist:
-        print("❌ Artist not found")
-        return None
+    # if not matched_artist:
+    #     print("❌ Artist not found")
+    #     return None
 
-    artist_id = matched_artist['id']
-    album_url = f"https://api.spotify.com/v1/artists/{artist_id}/albums"
-    all_albums = []
-    while album_url:
-        res = requests.get(album_url, headers=headers, params={"limit": 50}).json()
-        all_albums.extend(res.get('items', []))
-        album_url = res.get('next')
+    # artist_id = matched_artist['id']
+    # album_url = f"https://api.spotify.com/v1/artists/{artist_id}/albums"
+    # all_albums = []
+    # while album_url:
+    #     res = requests.get(album_url, headers=headers, params={"limit": 50}).json()
+    #     all_albums.extend(res.get('items', []))
+    #     album_url = res.get('next')
 
-    for album in all_albums:
-        album_id = album['id']
-        album_release = album.get('release_date', '')
-        track_url = f"https://api.spotify.com/v1/albums/{album_id}/tracks"
-        while track_url:
-            track_res = requests.get(track_url, headers=headers).json()
-            for track in track_res.get('items', []):
-                track_details = requests.get(f"https://api.spotify.com/v1/tracks/{track['id']}", headers=headers).json()
-                if is_match(track_details, track_name, artist_name, isrc, release_date or album_release):
-                    print("✅ Found via artist album fallback")
-                    return track_details['external_urls']['spotify']
-            track_url = track_res.get('next')
+    # for album in all_albums:
+    #     album_id = album['id']
+    #     album_release = album.get('release_date', '')
+    #     track_url = f"https://api.spotify.com/v1/albums/{album_id}/tracks"
+    #     while track_url:
+    #         track_res = requests.get(track_url, headers=headers).json()
+    #         for track in track_res.get('items', []):
+    #             track_details = requests.get(f"https://api.spotify.com/v1/tracks/{track['id']}", headers=headers).json()
+    #             if is_match(track_details, track_name, artist_name, isrc, release_date or album_release):
+    #                 print("✅ Found via artist album fallback")
+    #                 return track_details['external_urls']['spotify']
+    #         track_url = track_res.get('next')
 
     print("❌ No match found sportify")
     return None
