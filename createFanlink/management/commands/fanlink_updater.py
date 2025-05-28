@@ -28,7 +28,7 @@ class Command(BaseCommand):
                 expected_headers = ['Label', 'Artist', 'Release', 'UPC', 'Date', 'Links','ISRC']
                 all_data = sheet.get_all_records(expected_headers=expected_headers)
                 empty_fanlink_rows = [i for i, row in enumerate(all_data) if row.get('Fanlinks', '').strip() == '']
-                print("connected to sheet and empty rows collected the sheet")
+                print("connected to sheet and empty rows collected")
                 if not empty_fanlink_rows:
                     print("No empty Fanlink found on the sheet")
                 else:
