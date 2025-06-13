@@ -39,12 +39,23 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 
 # SPOTIFY_CLIENT_SECRET = '5dfa2a317fcb4a3e926058e18cda5aba'
 
-# GOOGLE_CSE_ID = '14466a0c1aff54c1d'
-# GOOGLE_API_KEY = 'AIzaSyDPLOagFdn4-VHToWM9cd3rbyacDgEj2Pk'
+# GOOGLE_CSE_ID = '732c45f20c8374aba'
+# GOOGLE_API_KEY = 'AIzaSyBqzWyb3eXaiJLz8TI2ubrGFQMi2WZyYHw'
 
-# YOUTUBE_API_KEY = 'AIzaSyDPLOagFdn4-VHToWM9cd3rbyacDgEj2Pk'
+# YOUTUBE_API_KEY = 'AIzaSyBqzWyb3eXaiJLz8TI2ubrGFQMi2WZyYHw'
 
 # DEBUG = True
+
+
+
+
+# initial api keys
+# GOOGLE_CSE_ID = '14466a0c1aff54c1d'
+# GOOGLE_API_KEY = 'AIzaSyDPLOagFdn4-VHToWM9cd3rbyacDgEj2Pk'
+# YOUTUBE_API_KEY = 'AIzaSyDPLOagFdn4-VHToWM9cd3rbyacDgEj2Pk'
+
+
+
 
 
 ALLOWED_HOSTS = ["*"]

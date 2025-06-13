@@ -227,45 +227,47 @@ def search_boomplay_with_google(artist_name, track_name, release_date=None, isrc
     api_key = settings.GOOGLE_API_KEY
     cse_id = settings.GOOGLE_CSE_ID
     search_url = "https://www.googleapis.com/customsearch/v1"
-
-    query = f"{artist_name} {track_name} site:boomplay.com"
+  
     params = {
         "key": api_key,
         "cx": cse_id,
-        "q": query,
-        "num": 50
+        "q": f"{artist_name} {track_name} site:boomplay.com",
     }
+
 
     response = requests.get(search_url, params=params).json()
     results = response.get("items", [])
+    #print("response searched result on boomplay",response)
+    if results :
+        for item in results:
+            title = item.get("title", "")
+            #print("item from boomplay",item)
+            link = item.get("link", "")
+            
+            if is_boomplay_match(title, artist_name, track_name):
+                print("🔎 Candidate found:", title)
+                try:
+                    page = requests.get(link, timeout=5)
+                    page.raise_for_status()
+                    found_isrc, found_date = extract_isrc_and_release_date(page.text)
 
-    for item in results:
-        title = item.get("title", "")
-        link = item.get("link", "")
-        
-        if is_boomplay_match(title, artist_name, track_name):
-            print("🔎 Candidate found:", title)
-            try:
-                page = requests.get(link, timeout=5)
-                page.raise_for_status()
-                found_isrc, found_date = extract_isrc_and_release_date(page.text)
+                    # Validate ISRC if provided
+                    if isrc and found_isrc and found_isrc.upper() != isrc.upper():
+                        print("❌ ISRC mismatch:", found_isrc, "!=", isrc)
+                        continue
 
-                # Validate ISRC if provided
-                if isrc and found_isrc and found_isrc.upper() != isrc.upper():
-                    print("❌ ISRC mismatch:", found_isrc, "!=", isrc)
+                    # Validate release date if provided
+                    if release_date and found_date and found_date != release_date:
+                        print("❌ Release date mismatch:", found_date, "!=", release_date)
+                        continue
+
+                    print("✅ Boomplay match confirmed")
+                    return link
+                except Exception as e:
+                    print("⚠️ Failed to load or parse:", link, "| Error:", str(e))
                     continue
-
-                # Validate release date if provided
-                if release_date and found_date and found_date != release_date:
-                    print("❌ Release date mismatch:", found_date, "!=", release_date)
-                    continue
-
-                print("✅ Boomplay match confirmed")
-                return link
-            except Exception as e:
-                print("⚠️ Failed to load or parse:", link, "| Error:", str(e))
-                continue
-
+    else:
+        print("no searched result on boomplay")
     print("❌ No valid Boomplay match found")
     return None
 
@@ -282,10 +284,11 @@ def search_audiomack_with_google(artist_name, track_name, release_date=None, isr
         "cx": cse_id,
         "q": f"{artist_name} {track_name} site:audiomack.com",
     }
+
     
     response = requests.get(search_url, params=params)
     response_data = response.json()
-    
+    #print("response searched result on audiomack",response_data)
     try:
         best_match = None
         highest_score = 0
@@ -308,7 +311,7 @@ def search_audiomack_with_google(artist_name, track_name, release_date=None, isr
             result_combo = f"{title} {snippet}"
             score = difflib.SequenceMatcher(None, input_combo, result_combo).ratio()
 
-            if score > highest_score and score >= 0.75:
+            if score > highest_score and score >= 0.5:
                 highest_score = score
                 best_match = link
 

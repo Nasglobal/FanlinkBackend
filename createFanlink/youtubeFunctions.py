@@ -32,6 +32,8 @@ def get_youtube_video_link(artist_name, track_name, release_date, isrc=None):
 
     search_response = requests.get(search_url, params=search_params)
     search_data = search_response.json()
+    #print("youtube response data",search_data)
+    
     if not search_data:
         print("❌ no search response found")
         return None
@@ -299,7 +301,7 @@ def search_amazon_music_with_google(artist_name, track_name, release_date=None, 
             result_combo = f"{title}"
             score = difflib.SequenceMatcher(None, input_combo, result_combo).ratio()
 
-            if score > highest_score and score >= 0.75:
+            if score > highest_score and score >= 0.85:
                 highest_score = score
                 best_match = link
 
@@ -357,7 +359,7 @@ def search_tidal_with_google(artist_name, track_name, release_date=None, isrc=No
             result_combo = f"{title}"
             score = difflib.SequenceMatcher(None, input_combo, result_combo).ratio()
 
-            if score > highest_score and score >= 0.75:
+            if score > highest_score and score >= 0.85:
                 highest_score = score
                 best_match = link
 

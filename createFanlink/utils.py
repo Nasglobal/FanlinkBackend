@@ -41,7 +41,7 @@ def stop_watch(channel_id,resource_id):
     print("Stopped watch for channel ID:",channel_id)
 
 
-# Your OAuth2 credentials setup (modify as needed)
+# Your OAuth2 credentials setup 
 def get_google_credentials():
     return service_account.Credentials.from_service_account_file('./fanlink-440822-6316459498b3.json', scopes=[
         'https://www.googleapis.com/auth/drive',

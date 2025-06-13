@@ -65,9 +65,9 @@ from .youtubeFunctions import get_youtube_video_link,get_deezer_track_link,get_a
 previous_rows = []
 
 class CustomPagination(pagination.PageNumberPagination):
-    page_size = 50  # Number of records per page
+    page_size = 1000  # Number of records per page
     page_size_query_param = 'page_size'
-    max_page_size = 100
+    max_page_size = 2000
 
     def get_page_size(self, request):
         page_size = request.query_params.get('page_size') or self.page_size
@@ -491,6 +491,7 @@ def generate_fanlinks_in_batch(request):
         sheet = spreadsheet.worksheet("The Orchard")  # Change "Sheet1" if needed
         expected_headers = ['Label', 'Artist', 'Release', 'UPC', 'Date', 'Links','ISRC','Fanlinks','MissingLinks']
         all_data = sheet.get_all_records(expected_headers=expected_headers)
+        print("connected to google sheet...")
         empty_fanlink_rows = [i for i, row in enumerate(all_data) if row.get('Fanlinks', '').strip() == '']
         if not empty_fanlink_rows:
             return JsonResponse({"message": "No unprocessed tracks found"})
@@ -507,6 +508,7 @@ def generate_fanlinks_in_batch(request):
     except Exception as e:  
         #-7th dec pull back      
         return JsonResponse({"error": str(e)}, status=500)
+
 
 @csrf_exempt
 def export_releases_fanlink(request):
