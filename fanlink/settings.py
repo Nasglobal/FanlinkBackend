@@ -40,7 +40,9 @@ DEBUG = os.getenv('DEBUG', 'False') == 'True'
 # SPOTIFY_CLIENT_SECRET = '5dfa2a317fcb4a3e926058e18cda5aba'
 
 # GOOGLE_CSE_ID = '732c45f20c8374aba'
+# GOOGLE_API_KEY = 'AIzaSyBqzWyb3eXaiJLz8TI2ubrGFQMi2WZyYHw'
 
+# YOUTUBE_API_KEY = 'AIzaSyBqzWyb3eXaiJLz8TI2ubrGFQMi2WZyYHw'
 
 # DEBUG = True
 
@@ -265,3 +267,18 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# fanlink_worker:
+#     build: .
+#     command: python manage.py fanlink_updater
+#     depends_on:
+#       mysql:
+#         condition: service_healthy
+#       django:
+#         condition: service_started
+#     restart: always
+#     env_file:
+#       - .env
+#     networks:
+#       - mynetwork

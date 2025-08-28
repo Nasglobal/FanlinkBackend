@@ -32,8 +32,8 @@ from .utils import fetch_sheet_data,get_last_updated_row,get_google_credentials
 from sendfile import sendfile
 from django.urls import reverse
 import openpyxl
-from openpyxl import load_workbook
-from openpyxl.styles import Font,PatternFill
+from openpyxl import load_workbook,Workbook
+from openpyxl.styles import Font,PatternFill, Border as XLBorder, Side
 import csv
 from io import StringIO,BytesIO,TextIOWrapper
 import os
@@ -49,8 +49,12 @@ from gspread_formatting import (
     Border,
     Color,
     TextFormat,
-    NumberFormat
+    NumberFormat,
+    batch_updater
 )
+from openpyxl import Workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
+from zipfile import ZipFile
 import numpy as np
 import io
 import random
@@ -59,7 +63,6 @@ import requests
 from datetime import datetime
 from .spotifyFunctions import get_spotify_track_link,replace_spaces_with_underscore,search_boomplay_with_google,search_audiomack_with_google,get_itunes_track_link
 from .youtubeFunctions import get_youtube_video_link,get_deezer_track_link,get_apple_music_link,search_amazon_music_with_google,search_tidal_with_google
-
 
 # Global variable to store previously fetched rows
 previous_rows = []
@@ -210,6 +213,7 @@ class ReleasesViewSet(viewsets.ModelViewSet):
           artist_name = row['Artists']
           track_name = row['Title']
           
+
           if Releases.objects.filter(Artists__iexact=artist_name,Title__iexact=track_name).exists():
               print("track name exist already : ", track_name)
               # Skip existing rows
@@ -649,11 +653,64 @@ class UploadAccountSheetView(APIView):
 
         # Open spreadsheet and sheet
         spreadsheet = client.open_by_key("1J-nNwBetOsqu6EZk3-KsVBWJ_8sPgBc8AWnq9L-3yd0")
-        sheet = spreadsheet.worksheet("Sheet1")
+        #sheet = spreadsheet.worksheet("Sheet1")
+
+        # Get current year
+        current_year = str(datetime.now().year)
+
+        # Create a new worksheet
+        new_sheet_title = date_value+"-"+current_year
+        sheet = spreadsheet.add_worksheet(title="Temporary", rows="100", cols="20")
+
+        # Rename the new worksheet
+        sheet.update_title(new_sheet_title)
+        # Header values (B1 onwards)
+        headers = [
+            "SINGER", "TONENAME", "TONE_CD", "COUNT", "CHARGE", "REVENUE", "Label %",
+            "Revenue (N)", "Label Share %", "Royalty Payable (N)", "AGENTS %",
+            "Agents shar", "51 lex Records share", "Saheed@10%", "DANIEL 5%"
+        ]
+        # Write headers starting from cell B1
+        start_col_index = 2  # Column B
+        sheet.update_cell(1, start_col_index, headers[0])  # Write first header manually
+
+        # Write remaining headers
+        sheet.update(
+            f'B1:{chr(65 + start_col_index + len(headers) - 1)}1',
+            [headers]
+        )
+
+        from gspread.utils import rowcol_to_a1
+
+        header_row = 1
+
+        # Light gray background to A1
+        dummy_fmt = CellFormat(backgroundColor=Color(0.95, 0.95, 0.95))
+        format_cell_range(sheet, "A1", dummy_fmt)
+
+        # Bold header
+        bold_fmt = CellFormat(textFormat=TextFormat(bold=True))
+        end_col_index = start_col_index + len(headers) - 1
+        header_range = f"{rowcol_to_a1(header_row, start_col_index)}:{rowcol_to_a1(header_row, end_col_index)}"
+        format_cell_range(sheet, header_range, bold_fmt)
+
+        # Red "Agents shar"
+        if "Agents shar" in headers:
+            red_fmt = CellFormat(textFormat=TextFormat(bold=True, foregroundColor=Color(1, 0, 0)))
+            red_col_index = headers.index("Agents shar") + start_col_index
+            format_cell_range(sheet, rowcol_to_a1(header_row, red_col_index), red_fmt)
+
+        # Blue "Saheed@10%"
+        if "Saheed@10%" in headers:
+            blue_fmt = CellFormat(textFormat=TextFormat(bold=True, foregroundColor=Color(0, 0, 1)))
+            blue_col_index = headers.index("Saheed@10%") + start_col_index
+            format_cell_range(sheet, rowcol_to_a1(header_row, blue_col_index), blue_fmt)
+
+
 
         # Determine where to append
         existing_data = sheet.get_all_values()
-        start_row = len(existing_data) + 2
+        start_row = 2
         sheet.update(f"B{start_row}", [[date_value]])
 
         # Update data rows
@@ -678,6 +735,7 @@ class UploadAccountSheetView(APIView):
 
         # Add total if available
         xl = pd.read_excel(io.BytesIO(excel_data), header=None, dtype=str)
+
         total_value = xl.iloc[table_end_row + 1, 6] if xl.shape[0] > table_end_row + 1 else ""
         if total_value:
             try:
@@ -723,6 +781,7 @@ class UploadAccountSheetView(APIView):
         format_cell_range(sheet, value_range, currency_format)
 
 
+
         # Compute and append calculated values to next column
         calculated_column_index = df.shape[1] + 1  # +1 because we're adding a new column
         calculated_column_letter_label = colnum_to_letter(calculated_column_index + 1)  # +1 for column B offset
@@ -730,15 +789,18 @@ class UploadAccountSheetView(APIView):
         calculated_column_letter_royalty_share = colnum_to_letter(calculated_column_index + 3)
         calculated_column_letter_royalty = colnum_to_letter(calculated_column_index + 4)
 
-        calculated_column_letter_agent_percentage = colnum_to_letter(calculated_column_index + 6)
-        calculated_column_letter_agent_share = colnum_to_letter(calculated_column_index + 7)
-        calculated_column_letter_51lex = colnum_to_letter(calculated_column_index + 8)
-        calculated_column_letter_saheed = colnum_to_letter(calculated_column_index + 9)
-        calculated_column_letter_daniels = colnum_to_letter(calculated_column_index + 10)
+        calculated_column_letter_agent_percentage = colnum_to_letter(calculated_column_index + 5)
+        calculated_column_letter_agent_share = colnum_to_letter(calculated_column_index + 6)
+        calculated_column_letter_51lex = colnum_to_letter(calculated_column_index + 7)
+        calculated_column_letter_saheed = colnum_to_letter(calculated_column_index + 8)
+        calculated_column_letter_daniels = colnum_to_letter(calculated_column_index + 9)
 
         calculated_values = []
         rev_value = []
         royalty_share = []
+        saheed_shares = []
+        daniel_shares = []
+        fifty1_shares = []
         royalty_pay = []
         agent_royalty_share = []
         agent_royalty_pay = []
@@ -770,7 +832,9 @@ class UploadAccountSheetView(APIView):
 
                 royalty_payable = (label_share/100)*revenue
                 agent_share_payable = (agent_share/100)*royalty_payable
-
+                fiftyOneLx = round(revenue - (agent_share_payable+royalty_payable),2)
+                sah_share = round((10/100)*fiftyOneLx,2)
+                dan_share = round((5/100)*fiftyOneLx,2)
                 total_revenue_share = total_revenue_share + revenue
                 total_agent_share = total_agent_share + agent_share_payable
                 total_royalty_share = total_royalty_share + royalty_payable
@@ -781,17 +845,23 @@ class UploadAccountSheetView(APIView):
                 royalty_payable = ""
                 label_share = ""
                 agent_share_payable = ""
+                fiftyOneLx = ""
+                sah_share = ""
+                dan_share = ""
             calculated_values.append([label_percentage])
             rev_value.append([revenue])
             royalty_share.append([label_share])
             royalty_pay.append([royalty_payable])
             agent_royalty_share.append([agent_share])
             agent_royalty_pay.append([agent_share_payable])
+            saheed_shares.append([sah_share])
+            daniel_shares.append([dan_share])
+            fifty1_shares.append([fiftyOneLx])
+            
 
         fiftyonelex_share = total_revenue_share - (total_agent_share+total_royalty_share)
         # Update the calculated column in Google Sheets 
         sheet.update(f"{calculated_column_letter_label}{table_start_row + 1}", calculated_values)
-
         sheet.update(f"{calculated_column_letter_revenue}{table_start_row + 1}", rev_value)
         total_row_number_rev = table_start_row + len(rev_value) + 1
         sheet.update(f"{calculated_column_letter_revenue}{total_row_number_rev}", [[format(round(total_revenue_share, 2), ",.2f")]])
@@ -814,24 +884,358 @@ class UploadAccountSheetView(APIView):
         sheet.update(f"{calculated_column_letter_agent_share}{total_row_number_agent_share}", [[format(round(total_agent_share, 2), ",.2f")]])
   
         #51 lex share
+        sheet.update(f"{calculated_column_letter_51lex}{table_start_row + 1}", fifty1_shares)
         total_row_number_51lex = table_start_row + len(agent_royalty_pay) + 1
         sheet.update(f"{calculated_column_letter_51lex}{total_row_number_51lex}", [[format(round(fiftyonelex_share, 2), ",.2f")]])
         
+
         #Saheed share(10%)
+        sheet.update(f"{calculated_column_letter_saheed}{table_start_row + 1}", saheed_shares)
         saheed_share = (10/100)*fiftyonelex_share
         total_row_number_saheed = table_start_row + len(agent_royalty_pay) + 1
         sheet.update(f"{calculated_column_letter_saheed}{total_row_number_saheed}", [[format(round(saheed_share, 2), ",.2f")]])
         
 
         #Daniel share(5%)
+        sheet.update(f"{calculated_column_letter_daniels}{table_start_row + 1}", daniel_shares)
         daniel_share = (5/100)*fiftyonelex_share
         total_row_number_daniels = table_start_row + len(agent_royalty_pay) + 1
         sheet.update(f"{calculated_column_letter_daniels}{total_row_number_daniels}", [[format(round(daniel_share, 2), ",.2f")]])
 
 
-        return Response({
-            "message": "Uploaded and appended successfully"
-        })
+                # --- Reload full sheet without header ---
+        full_df = pd.read_excel(io.BytesIO(excel_data), header=None)
+
+        # 1. Find the first blank row after first table
+        blank_row_after_first_table = None
+        for i in range(df.shape[0], full_df.shape[0]):
+            row = full_df.iloc[i]
+            if row.isnull().all() or row.astype(str).str.strip().eq("").all() :
+                blank_row_after_first_table = i
+                print("blank row detected after first table")
+                break
+
+        # 2. Start scanning for the second table after the blank row
+        second_table_start = None
+        second_table_end = None
+
+        if blank_row_after_first_table is not None:
+            for i in range(blank_row_after_first_table + 1, full_df.shape[0]):
+                row = full_df.iloc[i]
+
+                # Check if any cell in the row has meaningful data
+                if row.notna().any() and row.astype(str).str.strip().any():
+                    second_table_start = i
+                    print(f"Second table starts at row {second_table_start + 1}")
+                    break
+
+        # Now find the end of the second table
+        if second_table_start is not None:
+            for j in range(second_table_start + 1, full_df.shape[0]):
+                row = full_df.iloc[j]
+                if not row.astype(str).str.strip().any():
+                    second_table_end = j
+                    break
+            else:
+                second_table_end = full_df.shape[0]
+
+            # Slice out the second table
+            second_table_df = full_df.iloc[second_table_start:second_table_end]
+
+            # Drop fully empty columns (optional, in case there’s padding)
+            second_table_df = second_table_df.dropna(how="all", axis=1)
+
+            # 1. Find the next available row
+            existing_values = sheet.get_all_values()
+            next_available_row = len(existing_values) + 4  # +4 for blank space after first table
+
+            # 2. Convert DataFrame to list of lists
+            second_table_values = second_table_df.values.tolist()
+
+            # 3. Update values to Google Sheet in columns C and D
+            cell_range = f"C{next_available_row}"
+            sheet.update(cell_range, second_table_values)
+
+            # 4. Format second column (figures) as number — it's now column D
+            end_row = next_available_row + len(second_table_values) - 1
+            format_cell_range(
+                sheet,
+                f"D{next_available_row}:D{end_row}",
+                CellFormat(
+                    numberFormat={
+                        "type": "NUMBER",
+                        "pattern": "#,##0.00"
+                    }
+                )
+            )
+
+            # 5. Apply borders to the 2-column second table (columns C and D)
+            format_cell_range(
+                sheet,
+                f"C{next_available_row}:D{end_row}",
+                CellFormat(
+                    borders=Borders(
+                        top=Border("SOLID", Color(0, 0, 0)),
+                        bottom=Border("SOLID", Color(0, 0, 0)),
+                        left=Border("SOLID", Color(0, 0, 0)),
+                        right=Border("SOLID", Color(0, 0, 0)),
+                    )
+                )
+            )
+
+
+            # 1. Perform last calculation for premier records and others
+            extra_rows = [
+                ["PREMIER RECORDS LTD SHARE PAYABLE", total_royalty_share],
+                ["AGENT", total_agent_share],
+                ["51 LEX RECORDS", fiftyonelex_share],
+                ["SAHEED", saheed_share],
+                ["DANIEL", daniel_share],
+            ]
+
+            # 2. Determine starting row for extra data (just after second table)
+            extra_row_start = end_row + 1
+            extra_row_end = extra_row_start + len(extra_rows) - 1
+
+            # 3. Update values into Google Sheet (columns C and D)
+            sheet.update(f"C{extra_row_start}:D{extra_row_end}", extra_rows)
+
+            # 4. Format values in column D as numbers with thousands comma
+            format_cell_range(
+                sheet,
+                f"D{extra_row_start}:D{extra_row_end}",
+                CellFormat(
+                    numberFormat={
+                        "type": "NUMBER",
+                        "pattern": "#,##0.00"
+                    }
+                )
+            )
+
+            # 5. Apply red text formatting to all inserted rows
+            format_cell_range(
+                sheet,
+                f"C{extra_row_start}:D{extra_row_end}",
+                CellFormat(
+                    textFormat=TextFormat(
+                        foregroundColor=Color(1, 0, 0),  # Red text
+                        bold=True
+                    )
+                )
+            )
+
+     
+
+
+       # Extract tables
+        first_table_start_col = 1  # column B
+        second_table_start_col = 2  # column C
+
+        # Find where each table ends by checking for the first row where the entire table is NaN
+        def get_table_rows(df, start_col):
+            data_rows = []
+            for idx in range(2, len(df)):  # skip row 0 and 1 (title + date)
+                row = df.iloc[idx]
+                values = row[start_col:]
+                if values.isnull().all():
+                    break
+                data_rows.append(values.tolist())
+            return data_row
+
+        first_table_df = df
+
+        # Entity-specific percentages
+        entity_percentages = {
+            "Saheed": 0,
+            "Daniel": 0,
+            "AgentMO": 0,
+            "PREMIER RECORDS":0
+        }
+
+        thin = Side(border_style="thin", color="000000")
+        thin_border = XLBorder(left=thin, right=thin, top=thin, bottom=thin)
+
+        # Prepare ZIP
+        zip_buffer = BytesIO()
+
+        with ZipFile(zip_buffer, 'w') as zipf:
+            for entity, percent in entity_percentages.items():
+                # Make copy of original first table
+                df_raw = first_table_df.copy()
+
+                # Identify the last column
+                last_col_name = df_raw.columns[-1]
+
+                # Avoid total row for calculation
+                df_calc = df_raw.iloc[:-1].copy()
+
+               
+                 # Add extra columns
+                df_calc[last_col_name] = pd.to_numeric(df_calc[last_col_name], errors='coerce')
+                df_calc["Label %"] = 26.32
+                df_calc["Revenue (N)"] = ( (26.32 / 100)*df_calc[last_col_name]).round(2)
+                # Initialize new columns base on agent
+                if entity=="PREMIER RECORDS":
+                    df_calc["Label share %"] = 0
+                    df_calc["Royalty Payable"] = 0
+                elif entity=="AgentMO":
+                    df_calc["Label share %"] = 0
+                    df_calc["Royalty Payable"] = 0
+                    df_calc["AGENTS %"] = 0
+                    df_calc["Agents Share"] = 0
+                elif entity=="Daniel":
+                    df_calc["Label share %"] = 0
+                    df_calc["Royalty Payable"] = 0
+                    df_calc["51 lex Records share"] = ''
+                    df_calc["Daniel 5%"] = 0
+                elif entity=="Saheed":
+                    df_calc["Label share %"] = 0
+                    df_calc["Royalty Payable"] = 0
+                    df_calc["51 lex Records share"] = ''
+                    df_calc["Saheed 10%"] = 0
+
+                
+
+                second_col_name = df_raw.columns[1]
+                # Assign values row by row
+                for idx, row in df_calc.iterrows():
+                    song_title = row[second_col_name]
+                    revenue = row["Revenue (N)"]
+                    if song_title == "Gwo Gwo Ngwo" or song_title == "Ka Esi Le Onye Isi Oche Gwo Gwo Ngwo":
+                        label_share = 70
+                        agent_percent = 10
+                    elif song_title in ["Gwo Gwo Ngwo Fast Jam Remix", "Gwo Gwo Ngwo Remix"]:
+                        label_share = 30
+                        agent_percent = 5
+                    else:
+                        label_share = 0
+                        agent_percent = 0
+
+                    royalty = (label_share / 100) * revenue
+                    agent_share = (agent_percent / 100) * royalty
+
+                    if entity=="PREMIER RECORDS":
+                        df_calc.at[idx, "Label share %"] = int(label_share)
+                        df_calc.at[idx, "Royalty Payable"] = round(royalty, 2)
+                    elif entity=="AgentMO":
+                        df_calc.at[idx, "Label share %"] = int(label_share)
+                        df_calc.at[idx, "Royalty Payable"] = round(royalty, 2)
+                        df_calc.at[idx, "AGENTS %"] = int(agent_percent)
+                        df_calc.at[idx, "Agents Share"] = round(agent_share, 2)
+                    elif entity=="Daniel":
+                        df_calc.at[idx, "Label share %"] = int(label_share)
+                        df_calc.at[idx, "Royalty Payable"] = round(royalty, 2)
+                        fifty1 = revenue - (agent_share+royalty)
+                        df_calc.at[idx, "Daniel 5%"] = round(fifty1 * 5 / 100, 2)
+                    elif entity=="Saheed":
+                        df_calc.at[idx, "Label share %"] = int(label_share)
+                        df_calc.at[idx, "Royalty Payable"] = round(royalty, 2)
+                        fifty1 = revenue - (agent_share+royalty) 
+                        df_calc.at[idx, "Saheed 10%"] = round(fifty1 * 10 / 100, 2)
+                    
+                    
+                    
+                # Concatenate total row back
+                total_row = df_raw.iloc[[-1]].copy()  
+                total_row["Label %"] = ''
+                total_row["Revenue (N)"] = (df_calc["Revenue (N)"].sum()).round(2)
+
+                if entity=="PREMIER RECORDS":
+                    total_row["Label share %"] = ''
+                    total_row["Royalty Payable"] = (df_calc["Royalty Payable"].sum()).round(2)
+                elif entity=="AgentMO":
+                    total_row["Label share %"] = ''
+                    total_row["Royalty Payable"] = (df_calc["Royalty Payable"].sum()).round(2)
+                    total_row["AGENTS %"] = ''
+                    total_row["Agents Share"] = (df_calc["Agents Share"].sum()).round(2)
+                elif entity=="Daniel":
+                    total_row["Label share %"] = ''
+                    total_row["Royalty Payable"] = (df_calc["Royalty Payable"].sum()).round(2)
+                    total_row["51 lex Records share"] = round(fiftyonelex_share,2)
+                    total_row["Daniel 5%"] = (df_calc["Daniel 5%"].sum()).round(2)
+                elif entity=="Saheed":
+                    total_row["Label share %"] = ''
+                    total_row["Royalty Payable"] = (df_calc["Royalty Payable"].sum()).round(2)
+                    total_row["51 lex Records share"] = round(fiftyonelex_share,2)
+                    total_row["Saheed 10%"] = (df_calc["Saheed 10%"].sum()).round(2)
+
+                    
+                
+                final_table_df = pd.concat([df_calc, total_row], ignore_index=True)
+
+                # Create Excel
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "Account Report"
+
+                # Set date
+                ws['B2'] = date_value
+
+                # Append second table first (no headers)
+                ws.append([])
+                second_table_start_row = ws.max_row + 2
+                for r in dataframe_to_rows(second_table_df, index=False, header=False):
+                    ws.append(['', ''] + r)
+                second_table_end_row = ws.max_row
+                second_table_cols = len(second_table_df.columns)
+                if entity=="PREMIER RECORDS":
+                    ws.append(['','','PREMIER RECORDS LTD SHARE PAYABLE',round(total_royalty_share,2)])
+                elif entity=="AgentMO":
+                    ws.append(['','','PREMIER RECORDS LTD SHARE PAYABLE',round(total_royalty_share,2)])
+                    ws.append(['','','AGENTMO SHARE',round(total_agent_share,2)])
+                elif entity=="Daniel":
+                    ws.append(['','','PREMIER RECORDS LTD SHARE PAYABLE',round(total_royalty_share,2)])
+                    ws.append(['','','51 LEX RECORDS SHARE', round(fiftyonelex_share,2)])
+                    ws.append(['','','DANIEL 10%', round(daniel_share,2)])
+                elif entity=="Saheed":
+                    ws.append(['','','PREMIER RECORDS LTD SHARE PAYABLE',round(total_royalty_share,2)])
+                    ws.append(['','','51 LEX RECORDS SHARE', round(fiftyonelex_share,2)])
+                    ws.append(['','','SAHEED 5%', round(saheed_share,2)])
+
+                    
+                # Append first table (with headers and extra columns)
+                ws.append([])
+                ws.append([])
+                first_table_start_row = ws.max_row + 3
+                for r in dataframe_to_rows(final_table_df, index=False, header=True):
+                    ws.append([''] + r)
+                first_table_end_row = ws.max_row
+                first_table_cols = len(final_table_df.columns)
+
+                # Apply border to second table (now first)
+                for row in ws.iter_rows(min_row=second_table_start_row, max_row=second_table_end_row, min_col=3, max_col=2 + second_table_cols):
+                    for cell in row:
+                        cell.border = thin_border
+
+                # Apply border and formatting to first table (now second)
+                for row_idx, row in enumerate(ws.iter_rows(min_row=first_table_start_row, max_row=first_table_end_row, min_col=2, max_col=1 + first_table_cols), start=0):
+                    for col_idx, cell in enumerate(row):
+                        cell.border = thin_border
+                        if row_idx == 0:  # Header row
+                            cell.font = Font(bold=True)
+                        if isinstance(cell.value, (int, float)):
+                            cell.number_format = '#,##0.00'
+
+                # Save to memory
+                file_buffer = BytesIO()
+                wb.save(file_buffer)
+                file_buffer.seek(0)
+
+                # Add to ZIP
+                zipf.writestr(f"{entity}-account_statement.xlsx", file_buffer.read())
+
+        # Finalize ZIP
+        zip_buffer.seek(0)
+        # Return ZIP as downloadable response
+        response = FileResponse(zip_buffer, content_type='application/zip')
+        response['Content-Disposition'] = 'attachment; filename="Agents-Account_Reports.zip"'
+        return response
+
+
+
+        # return Response({
+        #     "message": "Uploaded and appended successfully"
+        # })
 
 
 def trim_at_first_empty_row(dataframe):
