@@ -1277,17 +1277,33 @@ def add_watermark_to_video(input_video, output_video, watermark_image):
     try:
         command = [
             "ffmpeg",
+            "-y",  # overwrite output if it exists
             "-i", input_video,  # Input video
             "-i", watermark_image,  # Watermark image
             "-filter_complex", "overlay=W-w-10:H-h-10",  # Position watermark at bottom-right
             "-codec:a", "copy",  # Keep original audio
             output_video
         ]
-        subprocess.run(command, check=True)  # Run FFmpeg command
-        return output_video  # Return watermarked video path
-    except subprocess.CalledProcessError as e:
-        print(f"Error adding watermark: {e}")
-        return None  # Return None if an error occurs
+
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+
+        if result.returncode != 0:
+            print("❌ FFmpeg failed")
+            print("STDOUT:", result.stdout)
+            print("STDERR:", result.stderr)
+            return None
+
+        return output_video
+
+    except Exception as e:
+        print(f"🔥 Unexpected error adding watermark: {e}")
+        return None
+
 
 
 
